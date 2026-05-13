@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "https://deno.land/std@0.177.0/http/server.ts": ["./types/serve.d.ts"],
+      "https://esm.sh/@supabase/supabase-js@2":        ["../../node_modules/@supabase/supabase-js/dist/index.d.mts"]
+    }
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["../../node_modules"]
+}

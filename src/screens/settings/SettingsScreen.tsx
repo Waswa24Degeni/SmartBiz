@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator,
-  useWindowDimensions, Alert, Modal, FlatList, Platform,
+  useWindowDimensions, Alert, Modal, FlatList, Platform, Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, FONTS, RADIUS, SHADOWS, BREAKPOINTS } from '../../lib/constants';
 import { Toggle } from '../../components/common/Toggle';
@@ -97,6 +98,8 @@ function ProfileSection() {
   const [bizCategory, setBizCat]  = useState(business?.category ?? '');
   const [currency, setCurrency]   = useState(business?.currency ?? 'TZS');
   const [saving, setSaving]       = useState(false);
+  const [logoUri, setLogoUri]     = useState<string | null>(business?.logo_url ?? null);
+  const [logoUploading, setLogoUploading] = useState(false);
 
   useEffect(() => {
     setFullName(user?.full_name ?? '');
@@ -104,7 +107,109 @@ function ProfileSection() {
     setBizName(business?.name ?? '');
     setBizCat(business?.category ?? '');
     setCurrency(business?.currency ?? 'TZS');
+    setLogoUri(business?.logo_url ?? null);
   }, [user, business]);
+
+  // ── Logo upload ─────────────────────────────────────────────────────────
+  const handlePickLogo = async () => {
+    if (!business?.id) {
+      Alert.alert('No business', 'Create a business first.');
+      return;
+    }
+
+    // Request permission
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission required',
+        'Allow photo library access to upload a logo.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => ImagePicker.requestMediaLibraryPermissionsAsync() },
+        ]
+      );
+      return;
+    }
+
+    Alert.alert('Upload Logo', 'Choose source', [
+      {
+        text: 'Camera',
+        onPress: async () => {
+          const camStatus = await ImagePicker.requestCameraPermissionsAsync();
+          if (camStatus.status !== 'granted') {
+            Alert.alert('Permission denied', 'Camera access is required.');
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+          });
+          if (!result.canceled && result.assets[0]) {
+            await uploadLogo(result.assets[0].uri);
+          }
+        },
+      },
+      {
+        text: 'Photo Library',
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+          });
+          if (!result.canceled && result.assets[0]) {
+            await uploadLogo(result.assets[0].uri);
+          }
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const uploadLogo = async (uri: string) => {
+    if (!business?.id) return;
+    setLogoUploading(true);
+    try {
+      // Fetch the image as a blob
+      const response = await fetch(uri);
+      const blob     = await response.blob();
+      const ext      = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
+      const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+      const fileName = `logo-${business.id}-${Date.now()}.${ext}`;
+      const filePath = `business-logos/${fileName}`;
+
+      // Upload to Supabase Storage bucket "business-assets"
+      const { error: uploadErr } = await supabase.storage
+        .from('business-assets')
+        .upload(filePath, blob, { contentType: mimeType, upsert: true });
+
+      if (uploadErr) throw uploadErr;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('business-assets')
+        .getPublicUrl(filePath);
+
+      // Save to businesses table
+      const { error: dbErr } = await supabase
+        .from('businesses')
+        .update({ logo_url: publicUrl })
+        .eq('id', business.id);
+
+      if (dbErr) throw dbErr;
+
+      setLogoUri(publicUrl);
+      await refreshUser();
+      Alert.alert('Logo updated', 'Your business logo has been saved.');
+    } catch (e: any) {
+      Alert.alert('Upload failed', e?.message ?? 'Could not upload logo. Please try again.');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!user?.id) return;
@@ -129,12 +234,27 @@ function ProfileSection() {
       <Text style={styles.sectionTitle}>Profile</Text>
 
       <View style={styles.profileCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{(user?.full_name ?? 'U').charAt(0).toUpperCase()}</Text>
+        {/* Logo / Avatar with camera tap */}
+        <TouchableOpacity
+          style={styles.avatarWrap}
+          onPress={handlePickLogo}
+          activeOpacity={0.8}
+          disabled={logoUploading}
+        >
+          {logoUri ? (
+            <Image source={{ uri: logoUri }} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{(business?.name ?? user?.full_name ?? 'B').charAt(0).toUpperCase()}</Text>
+            </View>
+          )}
           <View style={styles.avatarBadge}>
-            <Ionicons name="camera" size={12} color={COLORS.white} />
+            {logoUploading
+              ? <ActivityIndicator size={10} color={COLORS.white} />
+              : <Ionicons name="camera" size={12} color={COLORS.white} />}
           </View>
-        </View>
+        </TouchableOpacity>
+
         <Text style={styles.profileName}>{user?.full_name ?? '-'}</Text>
         <Text style={styles.profileStatus}>{user?.email}</Text>
         {business && (
@@ -1346,9 +1466,17 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, padding: SPACING.xl,
     alignItems: 'center', marginBottom: SPACING.md, ...SHADOWS.sm,
   },
+  avatarWrap: {
+    position: 'relative',
+    marginBottom: SPACING.sm,
+  },
   avatar: {
     width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.accent,
-    alignItems: 'center', justifyContent: 'center', marginBottom: SPACING.sm, position: 'relative',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: COLORS.border,
   },
   avatarText: { color: COLORS.white, fontSize: FONTS.sizes['2xl'], fontWeight: 'bold' },
   avatarBadge: {

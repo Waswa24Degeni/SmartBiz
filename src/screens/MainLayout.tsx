@@ -11,7 +11,7 @@ import { Header } from '../components/common/Header';
 import { COLORS, BREAKPOINTS } from '../lib/constants';
 import { Category } from '../types';
 import { MessagesScreen } from './messages/MessagesScreen';
-import { SupportScreen } from './support/SupportScreen';
+import { SupportScreen } from './support';
 import { POSScreen } from './pos';
 import { ReportsScreen } from './reports';
 import { StaffScreen } from './staff/StaffScreen';

@@ -26,6 +26,12 @@ type NotificationRow = {
   created_at: string;
 };
 
+type TeamMemberRow = {
+  id: string;
+  full_name: string;
+  role: string;
+};
+
 export function MessagesScreen() {
   const { user } = useAuth();
   const [items, setItems] = useState<NotificationRow[]>([]);
@@ -34,6 +40,9 @@ export function MessagesScreen() {
   const [composeVisible, setComposeVisible] = useState(false);
   const [composeTitle, setComposeTitle] = useState('');
   const [composeBody, setComposeBody] = useState('');
+  const [teamMembers, setTeamMembers] = useState<TeamMemberRow[]>([]);
+  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const fetchItems = useCallback(async (silent = false) => {
@@ -71,6 +80,54 @@ export function MessagesScreen() {
 
   useRealtimeSubscription('owner-messages-rt', 'notifications', () => fetchItems(true), !!user?.id);
 
+  const fetchTeamMembers = useCallback(async () => {
+    if (!user?.id) return;
+
+    setTeamLoading(true);
+    const businessId = user.business_id;
+    let resolvedBusinessId = businessId;
+
+    if (!resolvedBusinessId) {
+      const { data: me } = await supabase
+        .from('users')
+        .select('business_id')
+        .eq('id', user.id)
+        .maybeSingle();
+      resolvedBusinessId = me?.business_id ?? null;
+    }
+
+    if (!resolvedBusinessId) {
+      setTeamMembers([]);
+      setSelectedRecipients([]);
+      setTeamLoading(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, full_name, role')
+      .eq('business_id', resolvedBusinessId)
+      .in('role', ['owner', 'staff'])
+      .order('full_name', { ascending: true });
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      setTeamMembers([]);
+      setSelectedRecipients([]);
+      setTeamLoading(false);
+      return;
+    }
+
+    const rows = (data as TeamMemberRow[]).filter((member) => member.id !== user.id);
+    setTeamMembers(rows);
+    setSelectedRecipients(rows.map((member) => member.id));
+    setTeamLoading(false);
+  }, [user?.id, user?.business_id]);
+
+  useEffect(() => {
+    if (composeVisible) fetchTeamMembers();
+  }, [composeVisible, fetchTeamMembers]);
+
   const unreadCount = useMemo(() => items.filter((n) => !n.is_read).length, [items]);
 
   const handleCreate = async () => {
@@ -84,32 +141,21 @@ export function MessagesScreen() {
     }
 
     setSaving(true);
-    const { data: createdTicket, error } = await supabase
-      .from('support_tickets')
-      .insert({
-        user_id: user.id,
-        subject: composeTitle.trim(),
-        body: composeBody.trim(),
-        priority: 'normal',
-        status: 'open',
-      })
-      .select('id')
-      .maybeSingle();
-
-    if (!error && createdTicket?.id) {
-      const { error: threadError } = await supabase.from('support_ticket_messages').insert({
-        ticket_id: createdTicket.id,
-        sender_user_id: user.id,
-        sender_role: 'owner',
-        message: composeBody.trim(),
-      });
-
-      if (threadError) {
-        setSaving(false);
-        Alert.alert('Messaging Not Ready', `${threadError.message}\n\nRun scripts/support-messaging-module.sql in Supabase SQL Editor.`);
-        return;
-      }
+    if (selectedRecipients.length === 0) {
+      setSaving(false);
+      Alert.alert('Recipients Required', 'Select at least one teammate.');
+      return;
     }
+
+    const payload = selectedRecipients.map((recipientId) => ({
+      user_id: recipientId,
+      title: composeTitle.trim(),
+      body: `From ${user.full_name || 'Teammate'}: ${composeBody.trim()}`,
+      type: 'system' as const,
+      is_read: false,
+    }));
+
+    const { error } = await supabase.from('notifications').insert(payload);
 
     setSaving(false);
 
@@ -121,8 +167,25 @@ export function MessagesScreen() {
     setComposeVisible(false);
     setComposeTitle('');
     setComposeBody('');
-    Alert.alert('Sent', 'Your message has been sent to admin support.');
+    setSelectedRecipients([]);
+    Alert.alert('Sent', `Message delivered to ${payload.length} teammate${payload.length > 1 ? 's' : ''}.`);
     fetchItems();
+  };
+
+  const toggleRecipient = (recipientId: string) => {
+    setSelectedRecipients((prev) =>
+      prev.includes(recipientId)
+        ? prev.filter((id) => id !== recipientId)
+        : [...prev, recipientId],
+    );
+  };
+
+  const toggleAllRecipients = () => {
+    if (selectedRecipients.length === teamMembers.length) {
+      setSelectedRecipients([]);
+      return;
+    }
+    setSelectedRecipients(teamMembers.map((member) => member.id));
   };
 
   const handleToggleRead = async (row: NotificationRow) => {
@@ -170,7 +233,7 @@ export function MessagesScreen() {
         <Text style={styles.subtitle}>{items.length} total · {unreadCount} unread</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => setComposeVisible(true)}>
           <Ionicons name="add" size={14} color={COLORS.white} />
-          <Text style={styles.addBtnText}>Message Admin</Text>
+          <Text style={styles.addBtnText}>New Team Message</Text>
         </TouchableOpacity>
       </View>
 
@@ -217,10 +280,46 @@ export function MessagesScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHead}>
-              <Text style={styles.modalTitle}>New Message to Admin</Text>
+              <Text style={styles.modalTitle}>New Team Message</Text>
               <TouchableOpacity onPress={() => setComposeVisible(false)}>
                 <Ionicons name="close" size={20} color={COLORS.textSecondary} />
               </TouchableOpacity>
+            </View>
+
+            <View style={styles.recipientsWrap}>
+              <View style={styles.recipientsHead}>
+                <Text style={styles.recipientsLabel}>Recipients</Text>
+                {teamMembers.length > 0 ? (
+                  <TouchableOpacity onPress={toggleAllRecipients}>
+                    <Text style={styles.selectAllText}>
+                      {selectedRecipients.length === teamMembers.length ? 'Clear All' : 'Select All'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {teamLoading ? (
+                <ActivityIndicator color={COLORS.primary} size="small" />
+              ) : teamMembers.length === 0 ? (
+                <Text style={styles.noRecipientsText}>No teammates found for this business.</Text>
+              ) : (
+                <View style={styles.recipientsChips}>
+                  {teamMembers.map((member) => {
+                    const selected = selectedRecipients.includes(member.id);
+                    return (
+                      <TouchableOpacity
+                        key={member.id}
+                        style={[styles.recipientChip, selected && styles.recipientChipSelected]}
+                        onPress={() => toggleRecipient(member.id)}
+                      >
+                        <Text style={[styles.recipientChipText, selected && styles.recipientChipTextSelected]}>
+                          {member.full_name} ({member.role})
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
             </View>
 
             <TextInput
@@ -232,7 +331,7 @@ export function MessagesScreen() {
             />
             <TextInput
               style={[styles.input, styles.textArea]}
-              placeholder="Describe your issue or request"
+              placeholder="Write message for your team"
               placeholderTextColor={COLORS.textMuted}
               value={composeBody}
               onChangeText={setComposeBody}
@@ -318,6 +417,40 @@ const styles = StyleSheet.create({
   },
   modalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.sm },
   modalTitle: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text },
+  recipientsWrap: {
+    marginBottom: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    backgroundColor: COLORS.surfaceAlt,
+    gap: SPACING.xs,
+  },
+  recipientsHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  recipientsLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, fontWeight: '700' },
+  selectAllText: { fontSize: FONTS.sizes.xs, color: COLORS.primary, fontWeight: '700' },
+  recipientsChips: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs },
+  recipientChip: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+  },
+  recipientChipSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.infoLight,
+  },
+  recipientChipText: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textSecondary,
+  },
+  recipientChipTextSelected: {
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
+  noRecipientsText: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
   input: {
     borderWidth: 1,
     borderColor: COLORS.border,

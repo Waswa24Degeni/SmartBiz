@@ -94,6 +94,24 @@ FOR ALL
 USING (public.is_admin())
 WITH CHECK (public.is_admin() OR user_id = auth.uid());
 
+-- Internal team messaging: owner/staff can send notifications to teammates in same business
+DROP POLICY IF EXISTS "notifications_internal_same_business_insert" ON public.notifications;
+CREATE POLICY "notifications_internal_same_business_insert"
+ON public.notifications
+FOR INSERT
+WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM public.users sender
+    JOIN public.users recipient ON recipient.id = notifications.user_id
+    WHERE sender.id = auth.uid()
+      AND sender.role IN ('owner', 'staff')
+      AND recipient.role IN ('owner', 'staff')
+      AND sender.business_id IS NOT NULL
+      AND sender.business_id = recipient.business_id
+  )
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket_created
   ON public.support_ticket_messages(ticket_id, created_at DESC);

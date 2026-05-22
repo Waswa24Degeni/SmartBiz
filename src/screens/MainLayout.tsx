@@ -16,10 +16,11 @@ import { POSScreen } from './pos';
 import { ReportsScreen } from './reports';
 import { StaffScreen } from './staff/StaffScreen';
 import { CustomersScreen } from './customers';
+import { WalletScreen } from './wallet/WalletScreen';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 
-type Route = 'Dashboard' | 'Inventory' | 'POS' | 'Reports' | 'Messages' | 'Bills' | 'Customers' | 'Settings' | 'Notifications' | 'Support' | 'Staff';
+type Route = 'Dashboard' | 'Inventory' | 'POS' | 'Reports' | 'Messages' | 'Bills' | 'Customers' | 'Wallet' | 'Settings' | 'Notifications' | 'Support' | 'Staff';
 
 const ROUTE_PERMISSIONS: Record<Route, string> = {
   Dashboard: 'dashboard',
@@ -29,6 +30,7 @@ const ROUTE_PERMISSIONS: Record<Route, string> = {
   Messages: 'messages',
   Bills: 'bills',
   Customers: 'customers',
+  Wallet: 'pos',        // cashiers + owners can view wallet
   Settings: 'settings',
   Notifications: 'dashboard',
   Support: 'support',
@@ -36,15 +38,16 @@ const ROUTE_PERMISSIONS: Record<Route, string> = {
 };
 
 const NAV_ITEMS: { label: string; icon: string; route: Route }[] = [
-  { label: 'Dashboard', icon: 'grid-outline', route: 'Dashboard' },
-  { label: 'Inventory', icon: 'cube-outline', route: 'Inventory' },
-  { label: 'POS', icon: 'cart-outline', route: 'POS' },
-  { label: 'Reports', icon: 'bar-chart-outline', route: 'Reports' },
-  { label: 'Messages', icon: 'chatbubble-outline', route: 'Messages' },
-  { label: 'Bills', icon: 'receipt-outline', route: 'Bills' },
-  { label: 'Customers', icon: 'people-circle-outline', route: 'Customers' },
-  { label: 'Staff', icon: 'people-outline', route: 'Staff' },
-  { label: 'Settings', icon: 'settings-outline', route: 'Settings' },
+  { label: 'Dashboard', icon: 'grid-outline',        route: 'Dashboard' },
+  { label: 'Inventory', icon: 'cube-outline',         route: 'Inventory' },
+  { label: 'POS',       icon: 'cart-outline',         route: 'POS' },
+  { label: 'Reports',   icon: 'bar-chart-outline',    route: 'Reports' },
+  { label: 'Wallet',    icon: 'wallet-outline',       route: 'Wallet' },
+  { label: 'Messages',  icon: 'chatbubble-outline',   route: 'Messages' },
+  { label: 'Bills',     icon: 'receipt-outline',      route: 'Bills' },
+  { label: 'Customers', icon: 'people-circle-outline',route: 'Customers' },
+  { label: 'Staff',     icon: 'people-outline',       route: 'Staff' },
+  { label: 'Settings',  icon: 'settings-outline',     route: 'Settings' },
 ];
 
 export function MainLayout() {
@@ -118,6 +121,7 @@ export function MainLayout() {
     if (route === 'Reports') return ['Reports', 'Sales analytics'];
     if (route === 'Bills') return ['Bills', 'Payment history'];
     if (route === 'Customers') return ['Customers', 'Customer directory'];
+    if (route === 'Wallet') return ['Wallet', 'Collections & withdrawals'];
     if (route === 'Settings') return ['Settings'];
     return [route];
   };
@@ -164,6 +168,8 @@ export function MainLayout() {
         return <ReportsScreen />;
       case 'Customers':
         return <CustomersScreen />;
+      case 'Wallet':
+        return <WalletScreen />;
       case 'Settings':
         return <SettingsScreen />;
       case 'Messages':

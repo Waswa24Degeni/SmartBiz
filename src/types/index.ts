@@ -315,3 +315,73 @@ export interface ReceiptItem {
   item_total: number;
   created_at: string;
 }
+
+// =====================================
+// Wallet / Collection & Payout Types
+// =====================================
+
+export interface WalletAccount {
+  id: string;
+  business_id: string;
+  balance: number;
+  total_collected: number;
+  total_withdrawn: number;
+  currency: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type WalletTransactionType = 'collection' | 'withdrawal' | 'refund' | 'adjustment';
+export type WalletTransactionStatus = 'pending' | 'completed' | 'failed' | 'cancelled';
+
+export interface WalletTransaction {
+  id: string;
+  business_id: string;
+  wallet_id: string;
+  type: WalletTransactionType;
+  amount: number;
+  balance_before: number;
+  balance_after: number;
+  reference?: string;
+  description: string;
+  status: WalletTransactionStatus;
+  initiated_by?: string;
+  payout_method_id?: string;
+  created_at: string;
+}
+
+export type PayoutMethodType = 'bank' | 'mobile_money';
+
+export interface PayoutMethod {
+  id: string;
+  business_id: string;
+  type: PayoutMethodType;
+  label: string;
+  account_number: string;
+  account_name: string;
+  bank_code?: string;
+  bank_name?: string;
+  mobile_network?: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type WithdrawalStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface WithdrawalRequest {
+  id: string;
+  business_id: string;
+  wallet_id: string;
+  payout_method_id: string;
+  amount: number;
+  fee: number;
+  net_amount: number;
+  status: WithdrawalStatus;
+  initiated_by?: string;
+  notes?: string;
+  processed_at?: string;
+  created_at: string;
+  updated_at: string;
+  payout_method?: PayoutMethod;
+}

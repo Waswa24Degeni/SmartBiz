@@ -199,8 +199,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   logoIcon: {
-    width: 38,
-    height: 38,
+    width: 34,
+    height: 34,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',

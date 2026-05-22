@@ -9,6 +9,7 @@ import type { NativeStackNavigationOptions } from '@react-navigation/native-stac
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { CartProvider } from '../context/CartContext';
 import { SettingsProvider } from '../context/SettingsContext';
+import { supabase } from '../lib/supabase';
 import { COLORS, FONTS, SPACING, RADIUS } from '../lib/constants';
 
 // Screens
@@ -32,11 +33,33 @@ const stackScreenOptions: NativeStackNavigationOptions = {
 
 // ─── Shown when the user has a business but payment is still pending ─────────
 function PaymentPendingScreen() {
-  const { refreshUser } = useAuth();
+  const { business, refreshUser } = useAuth();
   const [checking, setChecking] = React.useState(false);
 
   const handleCheck = async () => {
     setChecking(true);
+    try {
+      if (business?.id) {
+        // Verify the newest subscription payment in pending/processing state.
+        const { data: pendingPayment } = await supabase
+          .from('payments')
+          .select('id')
+          .eq('business_id', business.id)
+          .eq('payment_type', 'subscription')
+          .in('status', ['pending', 'processing'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (pendingPayment?.id) {
+          await supabase.functions.invoke('verify-payment', {
+            body: { payment_id: pendingPayment.id },
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[PaymentPendingScreen] verify-payment failed:', e);
+    }
     await refreshUser();
     setChecking(false);
   };

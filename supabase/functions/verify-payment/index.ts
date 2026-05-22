@@ -47,6 +47,11 @@ async function snippeGetStatus(reference: string, options?: { apiKey?: string })
   return snippeFetch<any>(apiKey, 'GET', `/payouts/${reference}`);
 }
 
+async function snippeGetCollectionStatus(reference: string, options?: { apiKey?: string }): Promise<any> {
+  const apiKey = options?.apiKey ?? getEnv('SNIPPE_API_KEY');
+  return snippeFetch<any>(apiKey, 'GET', `/payments/${reference}`);
+}
+
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -95,7 +100,7 @@ serve(async (req: Request) => {
     const { data: payment, error: fetchErr } = await supabaseUser
       .from('payments')
       .select(
-        'id, status, gateway_reference, business_id, payment_type, initiated_by',
+        'id, status, gateway_reference, business_id, payment_type, initiated_by, subscription_id, pos_order_id',
       )
       .eq('id', body.payment_id)
       .maybeSingle();
@@ -131,7 +136,9 @@ serve(async (req: Request) => {
     // Poll Snippe
     let snippeResp;
     try {
-      snippeResp = await snippeGetStatus(payment.gateway_reference, { apiKey });
+      snippeResp = payment.payment_type === 'payout'
+        ? await snippeGetStatus(payment.gateway_reference, { apiKey })
+        : await snippeGetCollectionStatus(payment.gateway_reference, { apiKey });
     } catch (err) {
       console.error('Snippe status fetch error:', err);
       return json({ error: 'Failed to fetch status from payment gateway' }, 502);
@@ -153,6 +160,14 @@ serve(async (req: Request) => {
       if (updateErr) {
         console.error('payment status update error:', updateErr);
         // Non-fatal — still return the current known status
+      }
+
+      // Keep core domain records in sync even when webhooks are delayed/misconfigured.
+      if (newStatus === 'completed') {
+        await Promise.all([
+          handleSubscriptionActivation(supabaseAdmin, payment),
+          handlePosOrderCompletion(supabaseAdmin, payment),
+        ]);
       }
     }
 
@@ -197,4 +212,45 @@ async function resolveApiKey(
     return Deno.env.get(envName) ?? Deno.env.get('SNIPPE_API_KEY');
   }
   return Deno.env.get('SNIPPE_API_KEY');
+}
+
+async function handleSubscriptionActivation(
+  supabase: any,
+  payment: { payment_type: string; subscription_id?: string | null; business_id: string },
+): Promise<void> {
+  if (payment.payment_type !== 'subscription' || !payment.subscription_id) return;
+
+  const { error } = await supabase
+    .from('subscriptions')
+    .update({
+      status:       'active',
+      activated_at: new Date().toISOString(),
+    })
+    .eq('id', payment.subscription_id)
+    .eq('business_id', payment.business_id);
+
+  if (error) {
+    console.error('subscription activation error:', error);
+  }
+}
+
+async function handlePosOrderCompletion(
+  supabase: any,
+  payment: { payment_type: string; pos_order_id?: string | null; business_id: string },
+): Promise<void> {
+  if (payment.payment_type !== 'pos' || !payment.pos_order_id) return;
+
+  const { error } = await supabase
+    .from('sales')
+    .update({
+      payment_status: 'paid',
+      status:         'completed',
+      updated_at:     new Date().toISOString(),
+    })
+    .eq('id', payment.pos_order_id)
+    .eq('business_id', payment.business_id);
+
+  if (error) {
+    console.error('sale completion error:', error);
+  }
 }

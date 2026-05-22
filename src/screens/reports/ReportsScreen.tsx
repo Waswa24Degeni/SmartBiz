@@ -386,49 +386,9 @@ export function ReportsScreen() {
 
   const getAndroidDownloadsUri = (fileName: string) => `file:///storage/emulated/0/Download/${fileName}`;
 
-  const triggerWebDownloadFromUri = async (uri: string, fileName: string) => {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', fileName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  const savePdfToDevice = async () => {
-    if (Platform.OS === 'web') {
-      const html = reportType === 'sales' ? buildSalesReportPdf() : buildAdvancedReportPdf();
-      const fileName = `smartbiz-${reportType}-report-${period}-${Date.now()}.pdf`;
-      try {
-        const printed = await Print.printToFileAsync({ html });
-        await triggerWebDownloadFromUri(printed.uri, fileName);
-      } catch {
-        // Fallback if PDF file generation is not supported by the browser runtime.
-        await Print.printAsync({ html });
-      }
-      return;
-    }
-
+  const printReport = async () => {
     const html = reportType === 'sales' ? buildSalesReportPdf() : buildAdvancedReportPdf();
-    const localPdf = await renderPdfToAppStorage(html);
-
-    if (Platform.OS === 'android') {
-      const fileName = `smartbiz-${reportType}-report-${period}-${Date.now()}.pdf`;
-      const targetUri = getAndroidDownloadsUri(fileName);
-      try {
-        await FileSystem.copyAsync({ from: localPdf, to: targetUri });
-        Alert.alert('Saved', `PDF saved to Downloads:\n${targetUri}`);
-        return;
-      } catch {
-        // Some devices restrict direct Downloads writes in managed apps.
-      }
-    }
-
-    Alert.alert('Saved', `PDF saved to app storage:\n${localPdf}`);
+    await Print.printAsync({ html });
   };
 
   const sharePdf = async () => {
@@ -487,12 +447,12 @@ export function ReportsScreen() {
     Alert.alert('Saved', `CSV saved to app storage:\n${dest}`);
   };
 
-  const handleDownloadPdf = async () => {
+  const handlePrintReport = async () => {
     setExporting(true);
     try {
-      await savePdfToDevice();
+      await printReport();
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not save report PDF.');
+      Alert.alert('Error', e?.message ?? 'Could not print report.');
     } finally {
       setExporting(false);
     }
@@ -572,7 +532,7 @@ export function ReportsScreen() {
         <View style={styles.exportBtnsRow}>
           <TouchableOpacity
             style={[styles.exportBtn, exporting && { opacity: 0.6 }]}
-            onPress={handleDownloadPdf}
+            onPress={handlePrintReport}
             disabled={exporting}
             activeOpacity={0.85}
           >
@@ -580,8 +540,8 @@ export function ReportsScreen() {
               <ActivityIndicator color={COLORS.white} size="small" />
             ) : (
               <>
-                <Ionicons name="download-outline" size={16} color={COLORS.white} />
-                <Text style={styles.exportBtnText}>PDF</Text>
+                <Ionicons name="print-outline" size={16} color={COLORS.white} />
+                <Text style={styles.exportBtnText}>Print</Text>
               </>
             )}
           </TouchableOpacity>

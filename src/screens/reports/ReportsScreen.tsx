@@ -40,11 +40,6 @@ const STATUS_COLORS: Record<string, string> = {
   expired: COLORS.textMuted,
 };
 
-const getStatusPillStyle = (status: string) => {
-  const color = STATUS_COLORS[status] ?? COLORS.textMuted;
-  return { backgroundColor: color + '20', borderWidth: 1, borderColor: color + '40' };
-};
-
 export function ReportsScreen() {
   const { business } = useAuth();
   const { width } = useWindowDimensions();
@@ -175,8 +170,9 @@ export function ReportsScreen() {
     fetchPayments();
   }, [fetchSalesReport, fetchPayments]);
 
-  useRealtimeSubscription('reports-sales-rt', 'sales', () => fetchSalesReport(true), !!business?.id);
-  useRealtimeSubscription('reports-items-rt', 'sale_items', () => fetchSalesReport(true), !!business?.id);
+  const realtimeEnabled = !!business?.id && Platform.OS !== 'web';
+  useRealtimeSubscription('reports-sales-rt', 'sales', () => fetchSalesReport(true), realtimeEnabled);
+  useRealtimeSubscription('reports-items-rt', 'sale_items', () => fetchSalesReport(true), realtimeEnabled);
 
   const reportMetrics = useMemo(() => {
     const totalRevenue = salesItems.reduce((sum, item) => sum + item.total, 0);
@@ -194,6 +190,14 @@ export function ReportsScreen() {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+
+  const escapeCsv = (value: string | number) => {
+    const safe = String(value ?? '');
+    if (safe.includes(',') || safe.includes('"') || safe.includes('\n')) {
+      return `"${safe.replace(/"/g, '""')}"`;
+    }
+    return safe;
+  };
 
   const buildSalesReportPdf = () => {
     if (!business?.id) throw new Error('Business context is missing. Please sign in again.');
@@ -333,6 +337,44 @@ export function ReportsScreen() {
     `;
   };
 
+  const buildSalesReportCsv = () => {
+    if (salesItems.length === 0) throw new Error(`There are no sales transactions for this ${periodMeta.label.toLowerCase()}.`);
+    const header = ['Product Name', 'Cost Price', 'Cashier', 'Selling Price', 'Quantity', 'Total Amount', 'Net Profit'];
+    const rows = salesItems.map((item) => {
+      const itemProfit = (item.selling_price - item.cost_price) * item.quantity;
+      return [
+        escapeCsv(item.product_name),
+        escapeCsv(item.cost_price),
+        escapeCsv(item.cashier_name),
+        escapeCsv(item.selling_price),
+        escapeCsv(item.quantity),
+        escapeCsv(item.total),
+        escapeCsv(itemProfit),
+      ].join(',');
+    });
+
+    rows.push('');
+    rows.push(['', '', '', '', '', 'NET PROFIT', escapeCsv(reportMetrics.netProfit)].join(','));
+    return [header.join(','), ...rows].join('\n');
+  };
+
+  const buildAdvancedReportCsv = () => {
+    if (payments.length === 0 && salesItems.length === 0) {
+      throw new Error(`There is no data for this ${periodMeta.label.toLowerCase()}.`);
+    }
+
+    const header = ['Type', 'Amount', 'Phone', 'Status', 'Date'];
+    const rows = payments.map((p) => [
+      escapeCsv(p.payment_type),
+      escapeCsv(Number(p.amount)),
+      escapeCsv(p.payer_phone ?? '—'),
+      escapeCsv(p.status),
+      escapeCsv(format(new Date(p.initiated_at), 'dd MMM yyyy')),
+    ].join(','));
+
+    return [header.join(','), ...rows].join('\n');
+  };
+
   const renderPdfToAppStorage = async (html: string) => {
     const printed = await Print.printToFileAsync({ html });
     const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
@@ -392,6 +434,39 @@ export function ReportsScreen() {
     Alert.alert('Saved', `PDF saved to app storage:\n${localPdf}`);
   };
 
+  const saveCsvToDevice = async () => {
+    const csvContent = reportType === 'sales' ? buildSalesReportCsv() : buildAdvancedReportCsv();
+    const fileName = `smartbiz-${reportType}-report-${period}-${Date.now()}.csv`;
+
+    if (Platform.OS === 'web') {
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+    if (!baseDir) throw new Error('Cannot access local storage on this device.');
+    const dest = `${baseDir}${fileName}`;
+    await FileSystem.writeAsStringAsync(dest, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(dest, {
+        dialogTitle: `Share ${reportType} report Excel (CSV)`,
+        mimeType: 'text/csv',
+      });
+      return;
+    }
+
+    Alert.alert('Saved', `CSV saved to app storage:\n${dest}`);
+  };
+
   const handleDownloadPdf = async () => {
     setExporting(true);
     try {
@@ -409,6 +484,17 @@ export function ReportsScreen() {
       await sharePdf();
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Could not export report PDF.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDownloadExcel = async () => {
+    setExporting(true);
+    try {
+      await saveCsvToDevice();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Could not export Excel file.');
     } finally {
       setExporting(false);
     }
@@ -478,6 +564,16 @@ export function ReportsScreen() {
                 <Text style={styles.exportBtnText}>PDF</Text>
               </>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.excelBtn, exporting && { opacity: 0.6 }]}
+            onPress={handleDownloadExcel}
+            disabled={exporting}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="document-outline" size={16} color={COLORS.success} />
+            <Text style={styles.excelBtnText}>Excel</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -738,6 +834,19 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs + 2,
   },
   shareBtnText: { color: COLORS.primary, fontSize: FONTS.sizes.xs, fontWeight: '700' },
+  excelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.success + '15',
+    borderWidth: 1.5,
+    borderColor: COLORS.success + '40',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+  },
+  excelBtnText: { color: COLORS.success, fontSize: FONTS.sizes.xs, fontWeight: '700' },
 
   /* Summary Cards */
   summaryGrid: { flexDirection: 'row', gap: SPACING.sm, flexWrap: 'wrap' },

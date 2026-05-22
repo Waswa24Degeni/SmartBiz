@@ -110,6 +110,25 @@ function ProfileSection() {
     setLogoUri(business?.logo_url ?? null);
   }, [user, business]);
 
+  const decodeBase64ToArrayBuffer = (base64: string): ArrayBuffer => {
+    if (typeof globalThis.atob === 'function') {
+      const binary = globalThis.atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    const maybeBuffer = (globalThis as any).Buffer;
+    if (maybeBuffer) {
+      const buf = maybeBuffer.from(base64, 'base64');
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    }
+
+    throw new Error('Base64 decoder unavailable in this environment.');
+  };
+
   // ── Logo upload ─────────────────────────────────────────────────────────
   const handlePickLogo = async () => {
     if (!business?.id) {
@@ -145,6 +164,7 @@ function ProfileSection() {
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.8,
+            base64: true,
           });
           if (!result.canceled && result.assets[0]) {
             await uploadLogo(result.assets[0]);
@@ -159,6 +179,7 @@ function ProfileSection() {
             allowsEditing: true,
             aspect: [1, 1],
             quality: 0.8,
+            base64: true,
           });
           if (!result.canceled && result.assets[0]) {
             await uploadLogo(result.assets[0]);
@@ -183,10 +204,15 @@ function ProfileSection() {
       const fileName = `logo-${business.id}-${Date.now()}.${ext}`;
       const filePath = `business-logos/${fileName}`;
 
-      let fileBody: Blob | File;
+      let fileBody: Blob | File | ArrayBuffer;
+
+      // Most reliable path for Expo native: upload bytes from base64 if provided.
+      if (asset.base64) {
+        fileBody = decodeBase64ToArrayBuffer(asset.base64);
+      }
 
       // Web: use the native File object directly from image picker to avoid fetch(uri) failures.
-      if (Platform.OS === 'web') {
+      else if (Platform.OS === 'web') {
         const maybeFile = (asset as any).file as File | undefined;
         if (maybeFile) {
           fileBody = maybeFile;
@@ -195,6 +221,7 @@ function ProfileSection() {
           fileBody = await response.blob();
         }
       } else {
+        // Native fallback for environments that do not return base64.
         const response = await fetch(asset.uri);
         fileBody = await response.blob();
       }

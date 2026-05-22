@@ -86,6 +86,7 @@ export function BillsScreen() {
   const [chargeVisible, setChargeVisible] = useState(false);
   const [addItemVisible, setAddItemVisible] = useState(false);
   const [chargeSale, setChargeSale] = useState<Sale | null>(null);
+  const [reconciling, setReconciling] = useState(false);
 
   const [tableNumber, setTableNumber] = useState('');
   const [guests, setGuests] = useState('1');
@@ -156,10 +157,55 @@ export function BillsScreen() {
     setProducts((data as Product[]) ?? []);
   }, [business?.id]);
 
+  // Sync historical/late-updated payment records to sales so Bills UI stays correct.
+  const reconcilePaidSales = useCallback(async () => {
+    if (!business?.id || reconciling) return;
+    setReconciling(true);
+    try {
+      // 1) If a sale is already paid, ensure status is completed.
+      await supabase
+        .from('sales')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('business_id', business.id)
+        .eq('payment_status', 'paid')
+        .neq('status', 'completed');
+
+      // 2) If a POS payment was completed, force linked order to paid/completed.
+      const { data: completedPosPayments } = await supabase
+        .from('payments')
+        .select('pos_order_id')
+        .eq('business_id', business.id)
+        .eq('payment_type', 'pos')
+        .eq('status', 'completed')
+        .not('pos_order_id', 'is', null)
+        .limit(500);
+
+      const orderIds = ((completedPosPayments ?? []) as { pos_order_id: string | null }[])
+        .map((p) => p.pos_order_id)
+        .filter((id): id is string => !!id && /^[0-9a-fA-F-]{36}$/.test(id));
+
+      if (orderIds.length > 0) {
+        await supabase
+          .from('sales')
+          .update({
+            payment_status: 'paid',
+            status: 'completed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('business_id', business.id)
+          .in('id', orderIds);
+      }
+    } catch (e) {
+      console.warn('[BillsScreen] reconcilePaidSales failed:', e);
+    } finally {
+      setReconciling(false);
+    }
+  }, [business?.id, reconciling]);
+
   useEffect(() => {
-    fetchSales();
+    reconcilePaidSales().finally(() => fetchSales());
     fetchProducts();
-  }, [fetchSales, fetchProducts]);
+  }, [fetchSales, fetchProducts, reconcilePaidSales]);
 
   useRealtimeSubscription('bills-sales', 'sales', () => fetchSales(true), !!business?.id);
 

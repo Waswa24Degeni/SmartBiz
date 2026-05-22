@@ -705,7 +705,7 @@ export function POSScreen() {
                     <Text style={styles.fieldLabel}>Payer Phone Number</Text>
                     <TextInput
                       style={styles.fieldInput}
-                      placeholder="e.g. 0712 345 678"
+                      placeholder="0XXXXXXXXX or 255XXXXXXXXX"
                       placeholderTextColor={COLORS.textMuted}
                       value={mobilePhone}
                       onChangeText={setMobilePhone}
@@ -717,7 +717,7 @@ export function POSScreen() {
                     <Text style={styles.fieldLabel}>Payer Name</Text>
                     <TextInput
                       style={styles.fieldInput}
-                      placeholder="e.g. John Mwanga"
+                      placeholder="Full name of the account holder"
                       placeholderTextColor={COLORS.textMuted}
                       value={payerName}
                       onChangeText={setPayerName}

@@ -51,7 +51,7 @@ function SettingRow({
     <View style={rowStyles.row}>
       <View style={rowStyles.labelWrap}>
         <Text style={rowStyles.label}>{label}</Text>
-        {hint && <Text style={rowStyles.hint}>{hint}</Text>}
+        {!!hint && <Text style={rowStyles.hint}>{hint}</Text>}
       </View>
       {children}
     </View>

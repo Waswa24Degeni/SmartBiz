@@ -1010,7 +1010,7 @@ export function BillsScreen() {
                         {statusBadge(item.status)}
                       </View>
                       <View style={styles.billCardMid}>
-                        {item.table_number && (
+                        {!!item.table_number && (
                           <View style={styles.billMeta}>
                             <Ionicons name="grid-outline" size={11} color={COLORS.textMuted} />
                             <Text style={styles.billMetaText}>T{item.table_number}</Text>
@@ -1026,7 +1026,7 @@ export function BillsScreen() {
                           <Ionicons name="time-outline" size={11} color={COLORS.textMuted} />
                           <Text style={styles.billMetaText}>{format(new Date(item.created_at), 'HH:mm')}</Text>
                         </View>
-                        {(item as any).customer?.full_name && (
+                        {!!(item as any).customer?.full_name && (
                           <View style={styles.billMeta}>
                             <Ionicons name="person-outline" size={11} color={COLORS.textMuted} />
                             <Text style={styles.billMetaText} numberOfLines={1}>
@@ -1247,7 +1247,7 @@ export function BillsScreen() {
                         <Text style={styles.fieldLabel}>Payer Phone Number</Text>
                         <TextInput
                           style={[styles.fieldInput, WEB_OUTLINE_NONE]}
-                          placeholder="e.g. 0712 345 678"
+                          placeholder="0XXXXXXXXX or 255XXXXXXXXX"
                           placeholderTextColor={COLORS.textMuted}
                           value={chargeMobilePhone}
                           onChangeText={setChargeMobilePhone}
@@ -1258,7 +1258,7 @@ export function BillsScreen() {
                         <Text style={styles.fieldLabel}>Payer Name</Text>
                         <TextInput
                           style={[styles.fieldInput, WEB_OUTLINE_NONE]}
-                          placeholder="e.g. John Mwanga"
+                          placeholder="Full name of the account holder"
                           placeholderTextColor={COLORS.textMuted}
                           value={chargePayerName}
                           onChangeText={setChargePayerName}

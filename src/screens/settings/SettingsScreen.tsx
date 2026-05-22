@@ -9,7 +9,7 @@ import { Toggle } from '../../components/common/Toggle';
 import { Button } from '../../components/common/Button';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { SNIPPE_BANKS } from '../../lib/snippe';
+import { SNIPPE_BANKS, generateIdempotencyKey } from '../../lib/snippe';
 import { LANGUAGES, CURRENCIES, AppLanguage, AppCurrency } from '../../context/SettingsContext';
 
 const SETTINGS_MENU = [
@@ -17,11 +17,12 @@ const SETTINGS_MENU = [
   { id: 'Notifications',    label: 'Notifications',     icon: 'notifications-outline' },
   { id: 'CheckoutSettings', label: 'Checkout settings', icon: 'settings-outline' },
   { id: 'Payment',          label: 'Payment',           icon: 'card-outline' },
+  { id: 'Subscription',     label: 'Subscription',      icon: 'ribbon-outline' },
   { id: 'LanguageRegion',   label: 'Language & Region', icon: 'globe-outline' },
   { id: 'Security',         label: 'Security',          icon: 'shield-outline' },
 ];
 
-type SettingSection = 'Profile' | 'Notifications' | 'CheckoutSettings' | 'Payment' | 'Security' | 'LanguageRegion';
+type SettingSection = 'Profile' | 'Notifications' | 'CheckoutSettings' | 'Payment' | 'Subscription' | 'Security' | 'LanguageRegion';
 
 export function SettingsScreen() {
   const { width } = useWindowDimensions();
@@ -78,6 +79,7 @@ export function SettingsScreen() {
           {activeSection === 'Notifications'    && <NotificationsSection />}
           {activeSection === 'CheckoutSettings' && <CheckoutSettingsSection />}
           {activeSection === 'Payment'         && <PaymentSection />}
+          {activeSection === 'Subscription'     && <SubscriptionSection />}
           {activeSection === 'Security'         && <SecuritySection />}
           {activeSection === 'LanguageRegion'   && <LanguageRegionSection />}
         </ScrollView>
@@ -1028,6 +1030,284 @@ function LanguageRegionSection() {
     </View>
   );
 }
+
+// ============================================================
+// Subscription Section — view plan, pay to upgrade/renew
+// ============================================================
+
+const SUB_PLANS = [
+  { id: 'starter',  name: 'Starter',  price: 15000,  features: ['3 users', '500 products', 'Advanced reports'] },
+  { id: 'business', name: 'Business', price: 35000,  features: ['10 users', 'Unlimited products', 'Priority support'] },
+  { id: 'premium',  name: 'Premium',  price: 80000,  features: ['Unlimited users', 'All features', 'Dedicated support'] },
+] as const;
+
+type SubPlanId = typeof SUB_PLANS[number]['id'];
+
+function SubscriptionSection() {
+  const { user, business } = useAuth();
+  const [loading, setLoading]           = useState(true);
+  const [currentSub, setCurrentSub]     = useState<{ plan: string; status: string; expires_at: string } | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<SubPlanId>('starter');
+  const [payerPhone, setPayerPhone]     = useState('');
+  const [payerName, setPayerName]       = useState('');
+  const [phoneError, setPhoneError]     = useState('');
+  const [payStep, setPayStep]           = useState<'idle' | 'paying' | 'done'>('idle');
+  const [paymentId, setPaymentId]       = useState<string | null>(null);
+
+  const loadSub = useCallback(async () => {
+    if (!business?.id) { setLoading(false); return; }
+    const { data } = await supabase
+      .from('subscriptions')
+      .select('plan, status, expires_at')
+      .eq('business_id', business.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) setCurrentSub(data as any);
+    setLoading(false);
+  }, [business?.id]);
+
+  useEffect(() => {
+    loadSub();
+    // Pre-fill payer name from user profile
+    if (user?.full_name) setPayerName(user.full_name);
+    if (user?.phone)     setPayerPhone(user.phone);
+  }, [loadSub, user?.full_name, user?.phone]);
+
+  const plan = SUB_PLANS.find(p => p.id === selectedPlan)!;
+
+  const handlePay = async () => {
+    const normalized = payerPhone.trim().replace(/\s/g, '');
+    if (!normalized || normalized.length < 9) {
+      setPhoneError('Enter a valid mobile money number (e.g. 0712345678)');
+      return;
+    }
+    if (!business?.id) {
+      Alert.alert('Error', 'No business found. Please sign out and back in.');
+      return;
+    }
+    setPhoneError('');
+    setPayStep('paying');
+
+    try {
+      const { data: payResult, error: payErr } = await supabase.functions.invoke(
+        'initiate-payment',
+        {
+          body: {
+            payment_type:    'subscription',
+            channel:         'mobile',
+            amount:          plan.price,
+            business_id:     business.id,
+            idempotency_key: generateIdempotencyKey('sub'),
+            payer_phone:     normalized,
+            payer_name:      payerName.trim() || user?.full_name || undefined,
+            metadata: { plan: selectedPlan },
+          },
+        },
+      );
+
+      if (payErr || !(payResult as any)?.success) {
+        Alert.alert(
+          'Payment Failed',
+          (payResult as any)?.message ?? payErr?.message ?? 'Could not initiate payment. Please try again.',
+        );
+        setPayStep('idle');
+        return;
+      }
+
+      const pid = (payResult as any).payment_id ?? null;
+      setPaymentId(pid);
+
+      // Insert/update subscription row as pending — webhook will activate it
+      const now = new Date();
+      const expiresAt = new Date(now);
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+
+      if (currentSub) {
+        await supabase
+          .from('subscriptions')
+          .update({ plan: selectedPlan, status: 'pending', expires_at: expiresAt.toISOString() })
+          .eq('business_id', business.id);
+      } else {
+        const { data: sub } = await supabase
+          .from('subscriptions')
+          .insert({
+            business_id:   business.id,
+            plan:          selectedPlan,
+            status:        'pending',
+            billing_cycle: 'monthly',
+            starts_at:     now.toISOString(),
+            expires_at:    expiresAt.toISOString(),
+          })
+          .select('id')
+          .single();
+
+        if (pid && sub) {
+          await supabase
+            .from('payments')
+            .update({ subscription_id: sub.id })
+            .eq('id', pid);
+        }
+      }
+
+      setPayStep('done');
+      loadSub();
+    } catch (e: any) {
+      setPayStep('idle');
+      Alert.alert('Error', e?.message ?? 'Something went wrong. Please try again.');
+    }
+  };
+
+  if (loading) return <ActivityIndicator color={COLORS.accent} style={{ marginTop: 40 }} />;
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Subscription</Text>
+      <Text style={styles.sectionSubtitle}>Manage your plan and pay via mobile money</Text>
+
+      {/* Current plan card */}
+      <View style={[styles.formCard, { marginBottom: SPACING.md }]}>
+        <Text style={styles.subsectionTitle}>Current Plan</Text>
+        {currentSub ? (
+          <View style={subStyles.planInfoRow}>
+            <View style={[subStyles.planBadge, { backgroundColor: COLORS.accent + '18' }]}>
+              <Text style={[subStyles.planBadgeText, { color: COLORS.accent }]}>
+                {currentSub.plan.charAt(0).toUpperCase() + currentSub.plan.slice(1)}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={subStyles.planStatus}>
+                Status: <Text style={{ color: currentSub.status === 'active' ? COLORS.success : COLORS.warning, fontWeight: '600' }}>{currentSub.status}</Text>
+              </Text>
+              <Text style={subStyles.planExpiry}>
+                Expires: {new Date(currentSub.expires_at).toLocaleDateString()}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.statusRow}>
+            <View style={[styles.statusDot, { backgroundColor: COLORS.textMuted }]} />
+            <Text style={styles.statusText}>No active subscription (Free plan)</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Done state */}
+      {payStep === 'done' && (
+        <View style={[styles.formCard, { marginBottom: SPACING.md, backgroundColor: COLORS.success + '12', borderWidth: 1, borderColor: COLORS.success + '40' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: SPACING.sm }}>
+            <Ionicons name="checkmark-circle" size={22} color={COLORS.success} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text }}>
+                USSD push sent!
+              </Text>
+              <Text style={{ fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, marginTop: 2 }}>
+                Check your phone ({payerPhone}) and enter your mobile money PIN to complete the payment. Your plan will activate automatically.
+              </Text>
+            </View>
+          </View>
+          <Button title="Pay Again / Renew" variant="outline" onPress={() => setPayStep('idle')} fullWidth size="sm" style={{ marginTop: SPACING.md }} />
+        </View>
+      )}
+
+      {payStep !== 'done' && (
+        <>
+          {/* Plan selector */}
+          <View style={[styles.formCard, { marginBottom: SPACING.md }]}>
+            <Text style={styles.subsectionTitle}>Choose a Plan</Text>
+            {SUB_PLANS.map(p => (
+              <TouchableOpacity
+                key={p.id}
+                style={[subStyles.planOption, selectedPlan === p.id && subStyles.planOptionActive]}
+                onPress={() => setSelectedPlan(p.id)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[subStyles.planOptionName, selectedPlan === p.id && subStyles.planOptionNameActive]}>
+                    {p.name}
+                  </Text>
+                  <Text style={subStyles.planOptionFeatures}>{p.features.join(' · ')}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <Text style={[subStyles.planOptionPrice, selectedPlan === p.id && { color: COLORS.accent }]}>
+                    TZS {p.price.toLocaleString()}
+                  </Text>
+                  <Text style={subStyles.planOptionCycle}>/month</Text>
+                </View>
+                {selectedPlan === p.id && (
+                  <Ionicons name="checkmark-circle" size={18} color={COLORS.accent} style={{ marginLeft: SPACING.sm }} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Payment form */}
+          <View style={styles.formCard}>
+            <Text style={styles.subsectionTitle}>Pay via Mobile Money</Text>
+            <Text style={{ fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, marginBottom: SPACING.md }}>
+              A USSD push will be sent to your phone. Enter your PIN to authorise TZS {plan.price.toLocaleString()}.
+            </Text>
+
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldLabel}>Your Mobile Money Number</Text>
+              <TextInput
+                style={[styles.editableInput, !!phoneError && { borderColor: COLORS.error }]}
+                value={payerPhone}
+                onChangeText={t => { setPayerPhone(t); setPhoneError(''); }}
+                keyboardType="phone-pad"
+                placeholder="0XXXXXXXXX or 255XXXXXXXXX"
+                placeholderTextColor={COLORS.textMuted}
+                autoCapitalize="none"
+                editable={payStep === 'idle'}
+              />
+              {!!phoneError && <Text style={{ fontSize: FONTS.sizes.xs, color: COLORS.error, marginTop: 4 }}>{phoneError}</Text>}
+            </View>
+
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldLabel}>Account Holder Name</Text>
+              <TextInput
+                style={styles.editableInput}
+                value={payerName}
+                onChangeText={setPayerName}
+                placeholder="Full name on the account"
+                placeholderTextColor={COLORS.textMuted}
+                editable={payStep === 'idle'}
+              />
+            </View>
+
+            <Button
+              title={payStep === 'paying' ? 'Sending USSD push…' : `Pay TZS ${plan.price.toLocaleString()}`}
+              onPress={handlePay}
+              loading={payStep === 'paying'}
+              fullWidth size="lg"
+              style={{ marginTop: SPACING.md }}
+            />
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+const subStyles = StyleSheet.create({
+  planInfoRow:     { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
+  planBadge:       { paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs, borderRadius: RADIUS.full },
+  planBadgeText:   { fontSize: FONTS.sizes.sm, fontWeight: '700' },
+  planStatus:      { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary },
+  planExpiry:      { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 2 },
+  planOption: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: SPACING.md, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
+    marginBottom: SPACING.sm,
+  },
+  planOptionActive:     { borderColor: COLORS.accent, backgroundColor: COLORS.accent + '0D' },
+  planOptionName:       { fontSize: FONTS.sizes.base, fontWeight: '600', color: COLORS.text },
+  planOptionNameActive: { color: COLORS.accent },
+  planOptionFeatures:   { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 2 },
+  planOptionPrice:      { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text },
+  planOptionCycle:      { fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },

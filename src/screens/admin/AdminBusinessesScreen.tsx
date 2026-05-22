@@ -1,26 +1,34 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Modal, Alert, ActivityIndicator,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Modal,
+  Alert,
+  ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONTS, SPACING, RADIUS } from '../../lib/constants';
+import { COLORS, FONTS, SPACING, RADIUS, BREAKPOINTS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useRealtimeSubscription } from '../../lib/hooks';
 
 const PLAN_COLORS: Record<string, string> = {
-  free:     COLORS.textMuted,
-  starter:  COLORS.info,
+  free: COLORS.textMuted,
+  starter: COLORS.info,
   business: COLORS.success,
-  premium:  COLORS.accent,
+  premium: COLORS.accent,
 };
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  active:    { bg: COLORS.successLight, text: COLORS.success },
-  trial:     { bg: COLORS.warningLight, text: COLORS.warning },
-  suspended: { bg: COLORS.errorLight,   text: COLORS.error },
-  inactive:  { bg: COLORS.border,       text: COLORS.textSecondary },
+  active: { bg: COLORS.successLight, text: COLORS.success },
+  trial: { bg: COLORS.warningLight, text: COLORS.warning },
+  suspended: { bg: COLORS.errorLight, text: COLORS.error },
+  inactive: { bg: COLORS.border, text: COLORS.textSecondary },
 };
 
 interface BizRow {
@@ -50,6 +58,8 @@ export function AdminBusinessesScreen() {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('All');
   const [detailTarget, setDetailTarget] = useState<BizDetail | null>(null);
+  const { width } = useWindowDimensions();
+  const isMobile = width < BREAKPOINTS.tablet;
 
   const fetchBusinesses = useCallback(async () => {
     setLoading(true);
@@ -71,16 +81,24 @@ export function AdminBusinessesScreen() {
       setLoading(false);
       return;
     }
+
     setBusinesses(
       (data ?? []).map((b: any) => {
         const sub = b.subscriptions?.[0];
         const subStatus = sub?.status ?? 'inactive';
-        const status = !b.is_verified ? 'trial' : subStatus === 'suspended' ? 'suspended' : subStatus === 'active' ? 'active' : 'inactive';
+        const status = !b.is_verified
+          ? 'trial'
+          : subStatus === 'suspended'
+            ? 'suspended'
+            : subStatus === 'active'
+              ? 'active'
+              : 'inactive';
+
         return {
           id: b.id,
           name: b.name,
-          category: b.category ?? '—',
-          owner_name: b.owner?.full_name ?? '—',
+          category: b.category ?? '-',
+          owner_name: b.owner?.full_name ?? '-',
           plan: sub?.plan ?? 'free',
           status,
           is_verified: b.is_verified ?? false,
@@ -97,7 +115,10 @@ export function AdminBusinessesScreen() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchBusinesses(); }, [fetchBusinesses]);
+  useEffect(() => {
+    fetchBusinesses();
+  }, [fetchBusinesses]);
+
   useRealtimeSubscription('admin-biz-rt', 'businesses', fetchBusinesses);
 
   const handleVerifyToggle = async (biz: BizRow) => {
@@ -110,10 +131,7 @@ export function AdminBusinessesScreen() {
         {
           text: newVal ? 'Verify' : 'Unverify',
           onPress: async () => {
-            const { error } = await supabase
-              .from('businesses')
-              .update({ is_verified: newVal })
-              .eq('id', biz.id);
+            const { error } = await supabase.from('businesses').update({ is_verified: newVal }).eq('id', biz.id);
             if (error) Alert.alert('Error', error.message);
             else fetchBusinesses();
           },
@@ -127,6 +145,7 @@ export function AdminBusinessesScreen() {
       Alert.alert('No Subscription', 'This business has no active subscription to suspend.');
       return;
     }
+
     const isSuspended = biz.status === 'suspended';
     Alert.alert(
       isSuspended ? 'Restore Subscription' : 'Suspend Subscription',
@@ -150,7 +169,8 @@ export function AdminBusinessesScreen() {
   };
 
   const categories = ['All', ...Array.from(new Set(businesses.map(b => b.category).filter(Boolean)))];
-  const filtered = businesses.filter(b => {
+
+  const filtered = businesses.filter((b) => {
     const q = search.toLowerCase();
     const matchSearch = b.name.toLowerCase().includes(q) || b.owner_name.toLowerCase().includes(q);
     const matchCat = catFilter === 'All' || b.category === catFilter;
@@ -159,31 +179,32 @@ export function AdminBusinessesScreen() {
 
   return (
     <View style={styles.root}>
-      {/* Toolbar */}
       <View style={styles.toolbar}>
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={16} color={COLORS.textMuted} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search businesses or owners…"
+            placeholder="Search businesses or owners..."
             placeholderTextColor={COLORS.textMuted}
             value={search}
             onChangeText={setSearch}
           />
         </View>
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={styles.catRow}>
-            {categories.slice(0, 8).map(c => (
+            {categories.slice(0, 8).map((cat) => (
               <TouchableOpacity
-                key={c}
-                style={[styles.catBtn, catFilter === c && styles.catBtnActive]}
-                onPress={() => setCatFilter(c)}
+                key={cat}
+                style={[styles.catBtn, catFilter === cat && styles.catBtnActive]}
+                onPress={() => setCatFilter(cat)}
               >
-                <Text style={[styles.catText, catFilter === c && styles.catTextActive]}>{c}</Text>
+                <Text style={[styles.catText, catFilter === cat && styles.catTextActive]}>{cat}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </ScrollView>
+
         <View style={styles.totalPill}>
           <Text style={styles.totalText}>{filtered.length} businesses</Text>
         </View>
@@ -203,82 +224,146 @@ export function AdminBusinessesScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-          <View style={styles.tableHead}>
-            <Text style={[styles.th, { flex: 1.8 }]}>Business</Text>
-            <Text style={styles.th}>Owner</Text>
-            <Text style={styles.th}>Plan</Text>
-            <Text style={styles.th}>Status</Text>
-            <Text style={styles.th}>Joined</Text>
-            <Text style={[styles.th, { flex: 0.8 }]}>Actions</Text>
-          </View>
-
           {filtered.length === 0 ? (
             <Text style={styles.emptyText}>No businesses found</Text>
-          ) : filtered.map(biz => (
-            <View key={biz.id} style={styles.row}>
-              <View style={[styles.cell, { flex: 1.8, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm }]}>
-                <View style={[styles.bizIcon, { backgroundColor: COLORS.primary + '18' }]}>
-                  <Ionicons name="business-outline" size={16} color={COLORS.primary} />
+          ) : isMobile ? (
+            filtered.map((biz) => (
+              <View key={biz.id} style={styles.mobileCard}>
+                <View style={styles.mobileHead}>
+                  <View style={[styles.bizIcon, { backgroundColor: COLORS.primary + '18' }]}>
+                    <Ionicons name="business-outline" size={16} color={COLORS.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.bizName}>{biz.name}</Text>
+                    <Text style={styles.bizCat}>{biz.category}</Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.bizName} numberOfLines={1}>{biz.name}</Text>
-                  <Text style={styles.bizCat} numberOfLines={1}>{biz.category}</Text>
+
+                <View style={styles.mobileBadgeRow}>
+                  <View style={[styles.badge, { backgroundColor: (PLAN_COLORS[biz.plan] ?? COLORS.textMuted) + '20' }]}>
+                    <Text style={[styles.badgeText, { color: PLAN_COLORS[biz.plan] ?? COLORS.textMuted, textTransform: 'capitalize' }]}>{biz.plan}</Text>
+                  </View>
+                  <View style={[styles.badge, { backgroundColor: STATUS_COLORS[biz.status]?.bg ?? COLORS.border }]}>
+                    <Text style={[styles.badgeText, { color: STATUS_COLORS[biz.status]?.text ?? COLORS.text }]}>{biz.status}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.mobileMeta}>Owner: {biz.owner_name}</Text>
+                <Text style={styles.mobileMeta}>Joined: {format(new Date(biz.created_at), 'dd MMM yyyy')}</Text>
+
+                <View style={styles.mobileActions}>
+                  <TouchableOpacity style={styles.mobileActionBtn} onPress={() => setDetailTarget(biz as BizDetail)}>
+                    <Ionicons name="eye-outline" size={14} color={COLORS.info} />
+                    <Text style={[styles.mobileActionText, { color: COLORS.info }]}>View</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.mobileActionBtn, { backgroundColor: biz.is_verified ? COLORS.warningLight : COLORS.successLight }]}
+                    onPress={() => handleVerifyToggle(biz)}
+                  >
+                    <Ionicons
+                      name={biz.is_verified ? 'shield-checkmark-outline' : 'shield-outline'}
+                      size={14}
+                      color={biz.is_verified ? COLORS.warning : COLORS.success}
+                    />
+                    <Text style={[styles.mobileActionText, { color: biz.is_verified ? COLORS.warning : COLORS.success }]}>
+                      {biz.is_verified ? 'Unverify' : 'Verify'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.mobileActionBtn, { backgroundColor: biz.status === 'suspended' ? COLORS.successLight : COLORS.errorLight }]}
+                    onPress={() => handleSuspendToggle(biz)}
+                  >
+                    <Ionicons
+                      name={biz.status === 'suspended' ? 'play-outline' : 'ban-outline'}
+                      size={14}
+                      color={biz.status === 'suspended' ? COLORS.success : COLORS.error}
+                    />
+                    <Text style={[styles.mobileActionText, { color: biz.status === 'suspended' ? COLORS.success : COLORS.error }]}> 
+                      {biz.status === 'suspended' ? 'Restore' : 'Suspend'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-              <View style={styles.cell}>
-                <Text style={styles.cellText} numberOfLines={1}>{biz.owner_name}</Text>
+            ))
+          ) : (
+            <>
+              <View style={styles.tableHead}>
+                <Text style={[styles.th, { flex: 1.8 }]}>Business</Text>
+                <Text style={styles.th}>Owner</Text>
+                <Text style={styles.th}>Plan</Text>
+                <Text style={styles.th}>Status</Text>
+                <Text style={styles.th}>Joined</Text>
+                <Text style={[styles.th, { flex: 0.8 }]}>Actions</Text>
               </View>
-              <View style={styles.cell}>
-                <View style={[styles.badge, { backgroundColor: (PLAN_COLORS[biz.plan] ?? COLORS.textMuted) + '20' }]}>
-                  <Text style={[styles.badgeText, { color: PLAN_COLORS[biz.plan] ?? COLORS.textMuted, textTransform: 'capitalize' }]}>
-                    {biz.plan}
-                  </Text>
+
+              {filtered.map((biz) => (
+                <View key={biz.id} style={styles.row}>
+                  <View style={[styles.cell, { flex: 1.8, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm }]}> 
+                    <View style={[styles.bizIcon, { backgroundColor: COLORS.primary + '18' }]}>
+                      <Ionicons name="business-outline" size={16} color={COLORS.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.bizName} numberOfLines={1}>{biz.name}</Text>
+                      <Text style={styles.bizCat} numberOfLines={1}>{biz.category}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.cell}>
+                    <Text style={styles.cellText} numberOfLines={1}>{biz.owner_name}</Text>
+                  </View>
+
+                  <View style={styles.cell}>
+                    <View style={[styles.badge, { backgroundColor: (PLAN_COLORS[biz.plan] ?? COLORS.textMuted) + '20' }]}>
+                      <Text style={[styles.badgeText, { color: PLAN_COLORS[biz.plan] ?? COLORS.textMuted, textTransform: 'capitalize' }]}>
+                        {biz.plan}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.cell}>
+                    <View style={[styles.badge, { backgroundColor: STATUS_COLORS[biz.status]?.bg ?? COLORS.border }]}>
+                      <Text style={[styles.badgeText, { color: STATUS_COLORS[biz.status]?.text ?? COLORS.text }]}>{biz.status}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.cell}>
+                    <Text style={styles.cellMuted}>{format(new Date(biz.created_at), 'dd MMM yyyy')}</Text>
+                  </View>
+
+                  <View style={[styles.cell, { flex: 0.8, flexDirection: 'row', gap: 4 }]}>
+                    <TouchableOpacity style={styles.actionBtn} onPress={() => setDetailTarget(biz as BizDetail)}>
+                      <Ionicons name="eye-outline" size={14} color={COLORS.info} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: biz.is_verified ? COLORS.warningLight : COLORS.successLight }]}
+                      onPress={() => handleVerifyToggle(biz)}
+                    >
+                      <Ionicons
+                        name={biz.is_verified ? 'shield-checkmark-outline' : 'shield-outline'}
+                        size={14}
+                        color={biz.is_verified ? COLORS.warning : COLORS.success}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: biz.status === 'suspended' ? COLORS.successLight : COLORS.errorLight }]}
+                      onPress={() => handleSuspendToggle(biz)}
+                    >
+                      <Ionicons
+                        name={biz.status === 'suspended' ? 'play-outline' : 'ban-outline'}
+                        size={14}
+                        color={biz.status === 'suspended' ? COLORS.success : COLORS.error}
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.cell}>
-                <View style={[styles.badge, { backgroundColor: STATUS_COLORS[biz.status]?.bg ?? COLORS.border }]}>
-                  <Text style={[styles.badgeText, { color: STATUS_COLORS[biz.status]?.text ?? COLORS.text }]}>
-                    {biz.status}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.cell}>
-                <Text style={styles.cellMuted}>{format(new Date(biz.created_at), 'dd MMM yyyy')}</Text>
-              </View>
-              <View style={[styles.cell, { flex: 0.8, flexDirection: 'row', gap: 4 }]}>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => setDetailTarget(biz as BizDetail)}
-                >
-                  <Ionicons name="eye-outline" size={14} color={COLORS.info} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: biz.is_verified ? COLORS.warningLight : COLORS.successLight }]}
-                  onPress={() => handleVerifyToggle(biz)}
-                >
-                  <Ionicons
-                    name={biz.is_verified ? 'shield-checkmark-outline' : 'shield-outline'}
-                    size={14}
-                    color={biz.is_verified ? COLORS.warning : COLORS.success}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: biz.status === 'suspended' ? COLORS.successLight : COLORS.errorLight }]}
-                  onPress={() => handleSuspendToggle(biz)}
-                >
-                  <Ionicons
-                    name={biz.status === 'suspended' ? 'play-outline' : 'ban-outline'}
-                    size={14}
-                    color={biz.status === 'suspended' ? COLORS.success : COLORS.error}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
+              ))}
+            </>
+          )}
         </ScrollView>
       )}
 
-      {/* Detail Modal */}
       <Modal visible={!!detailTarget} transparent animationType="slide" onRequestClose={() => setDetailTarget(null)}>
         <View style={styles.overlay}>
           <View style={styles.modal}>
@@ -288,18 +373,19 @@ export function AdminBusinessesScreen() {
                 <Ionicons name="close" size={22} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
+
             {detailTarget && (
               <View style={styles.detailGrid}>
                 {[
                   { icon: 'person-outline', label: 'Owner', val: detailTarget.owner_name },
                   { icon: 'grid-outline', label: 'Category', val: detailTarget.category },
                   { icon: 'pricetag-outline', label: 'Plan', val: detailTarget.plan },
-                  { icon: 'mail-outline', label: 'Email', val: detailTarget.email ?? '—' },
-                  { icon: 'call-outline', label: 'Phone', val: detailTarget.phone ?? '—' },
-                  { icon: 'location-outline', label: 'Address', val: detailTarget.address ?? '—' },
-                  { icon: 'cash-outline', label: 'Currency', val: detailTarget.currency ?? '—' },
+                  { icon: 'mail-outline', label: 'Email', val: detailTarget.email ?? '-' },
+                  { icon: 'call-outline', label: 'Phone', val: detailTarget.phone ?? '-' },
+                  { icon: 'location-outline', label: 'Address', val: detailTarget.address ?? '-' },
+                  { icon: 'cash-outline', label: 'Currency', val: detailTarget.currency ?? '-' },
                   { icon: 'calendar-outline', label: 'Joined', val: format(new Date(detailTarget.created_at), 'dd MMM yyyy') },
-                ].map(row => (
+                ].map((row) => (
                   <View key={row.label} style={styles.detailRow}>
                     <Ionicons name={row.icon as any} size={15} color={COLORS.textMuted} style={{ width: 20 }} />
                     <Text style={styles.detailLabel}>{row.label}:</Text>
@@ -308,10 +394,16 @@ export function AdminBusinessesScreen() {
                 ))}
               </View>
             )}
+
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalBtn, { flex: 1, backgroundColor: detailTarget?.is_verified ? COLORS.warningLight : COLORS.successLight }]}
-                onPress={() => { if (detailTarget) { handleVerifyToggle(detailTarget); setDetailTarget(null); } }}
+                onPress={() => {
+                  if (detailTarget) {
+                    handleVerifyToggle(detailTarget);
+                    setDetailTarget(null);
+                  }
+                }}
               >
                 <Ionicons
                   name={detailTarget?.is_verified ? 'shield-checkmark-outline' : 'shield-outline'}
@@ -322,9 +414,15 @@ export function AdminBusinessesScreen() {
                   {detailTarget?.is_verified ? 'Unverify' : 'Verify'}
                 </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.modalBtn, { flex: 1, backgroundColor: detailTarget?.status === 'suspended' ? COLORS.successLight : COLORS.errorLight }]}
-                onPress={() => { if (detailTarget) { handleSuspendToggle(detailTarget); setDetailTarget(null); } }}
+                onPress={() => {
+                  if (detailTarget) {
+                    handleSuspendToggle(detailTarget);
+                    setDetailTarget(null);
+                  }
+                }}
               >
                 <Ionicons
                   name={detailTarget?.status === 'suspended' ? 'play-outline' : 'ban-outline'}
@@ -370,16 +468,41 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: FONTS.sizes.sm, color: COLORS.text },
   catRow: { flexDirection: 'row', gap: 4 },
-  catBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: RADIUS.full, backgroundColor: COLORS.surfaceAlt, borderWidth: 1, borderColor: COLORS.border },
+  catBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surfaceAlt,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
   catBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   catText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
   catTextActive: { color: COLORS.white, fontWeight: '600' },
   totalPill: { paddingHorizontal: SPACING.sm, paddingVertical: 6, backgroundColor: COLORS.successLight, borderRadius: RADIUS.full },
   totalText: { fontSize: FONTS.sizes.xs, color: COLORS.success, fontWeight: '600' },
+
   scroll: { flex: 1, padding: SPACING.base },
-  tableHead: { flexDirection: 'row', paddingVertical: SPACING.sm, paddingHorizontal: SPACING.base, backgroundColor: COLORS.surfaceAlt, borderRadius: RADIUS.md, marginBottom: SPACING.xs },
+  tableHead: {
+    flexDirection: 'row',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.base,
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: RADIUS.md,
+    marginBottom: SPACING.xs,
+  },
   th: { flex: 1, fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '700', textTransform: 'uppercase' },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.sm, paddingHorizontal: SPACING.base, backgroundColor: COLORS.surface, borderRadius: RADIUS.md, marginBottom: 4, borderWidth: 1, borderColor: COLORS.border },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.base,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
   cell: { flex: 1 },
   bizIcon: { width: 28, height: 28, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
   bizName: { fontSize: FONTS.sizes.sm, fontWeight: '600', color: COLORS.text },
@@ -389,23 +512,86 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.full, alignSelf: 'flex-start' },
   badgeText: { fontSize: FONTS.sizes.xs, fontWeight: '600' },
   actionBtn: { width: 26, height: 26, borderRadius: 6, backgroundColor: COLORS.infoLight, alignItems: 'center', justifyContent: 'center' },
+
+  mobileCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.base,
+    marginBottom: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  mobileHead: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm },
+  mobileBadgeRow: { flexDirection: 'row', gap: SPACING.sm, flexWrap: 'wrap' },
+  mobileMeta: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
+  mobileActions: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs },
+  mobileActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.infoLight,
+  },
+  mobileActionText: { fontSize: FONTS.sizes.xs, fontWeight: '600' },
+
   emptyText: { textAlign: 'center', color: COLORS.textMuted, fontSize: FONTS.sizes.sm, padding: SPACING.xl },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: SPACING.xl },
-  modal: { backgroundColor: COLORS.surface, borderRadius: RADIUS.xl, padding: SPACING.xl, width: '100%', maxWidth: 420 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.base },
-  modalTitle: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text, flex: 1 },
-  detailGrid: { gap: SPACING.sm, marginBottom: SPACING.base },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
-  detailLabel: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, width: 70 },
-  detailVal: { flex: 1, fontSize: FONTS.sizes.sm, color: COLORS.text, fontWeight: '500' },
-  modalActions: { flexDirection: 'row', gap: SPACING.sm },
-  modalBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: SPACING.sm, borderRadius: RADIUS.md },
-  modalBtnText: { fontSize: FONTS.sizes.sm, fontWeight: '600' },
-  errorBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.xl, gap: SPACING.sm },
+
+  errorBox: { alignItems: 'center', justifyContent: 'center', padding: SPACING.xl, gap: SPACING.xs },
   errorTitle: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.error },
   errorMsg: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, textAlign: 'center', fontFamily: 'monospace' },
-  errorHint: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, textAlign: 'center', marginTop: SPACING.sm },
-  retryBtn: { marginTop: SPACING.md, paddingVertical: SPACING.sm, paddingHorizontal: SPACING.xl, backgroundColor: COLORS.primary, borderRadius: RADIUS.md },
+  errorHint: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, textAlign: 'center' },
+  retryBtn: {
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.sm,
+  },
   retryBtnText: { color: COLORS.white, fontWeight: '700' },
-});
 
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.base,
+  },
+  modal: {
+    width: '100%',
+    maxWidth: 520,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.base,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.base,
+  },
+  modalTitle: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text },
+  detailGrid: { gap: SPACING.sm },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.surfaceAlt,
+  },
+  detailLabel: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, width: 72 },
+  detailVal: { flex: 1, fontSize: FONTS.sizes.sm, color: COLORS.text },
+  modalActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.base },
+  modalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+  },
+  modalBtnText: { fontSize: FONTS.sizes.sm, fontWeight: '700' },
+});

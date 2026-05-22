@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONTS, SPACING, RADIUS } from '../../lib/constants';
+import { COLORS, FONTS, SPACING, RADIUS, BREAKPOINTS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useRealtimeSubscription } from '../../lib/hooks';
@@ -41,6 +41,8 @@ export function AdminDashboardScreen() {
   const [tab, setTab] = useState('Month');
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const { width } = useWindowDimensions();
+  const isMobile = width < BREAKPOINTS.tablet;
   const [stats, setStats] = useState<AdminStats>({
     totalBusinesses: 0,
     activeUsers: 0,
@@ -118,9 +120,9 @@ export function AdminDashboardScreen() {
   ];
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scroll} contentContainerStyle={[styles.container, isMobile && styles.containerMobile]} showsVerticalScrollIndicator={false}>
       {/* Time tabs */}
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, isMobile && styles.tabsMobile]}>
         {TIME_TABS.map(t => (
           <TouchableOpacity
             key={t}
@@ -147,9 +149,9 @@ export function AdminDashboardScreen() {
       ) : (
         <>
           {/* Stat cards */}
-          <View style={styles.statsGrid}>
+          <View style={[styles.statsGrid, isMobile && styles.statsGridMobile]}>
             {STAT_CARDS.map(stat => (
-              <View key={stat.label} style={styles.statCard}>
+              <View key={stat.label} style={[styles.statCard, isMobile && styles.statCardMobile]}>
                 <View style={[styles.statIcon, { backgroundColor: stat.color + '20' }]}>
                   <Ionicons name={stat.icon as any} size={22} color={stat.color} />
                 </View>
@@ -159,34 +161,50 @@ export function AdminDashboardScreen() {
             ))}
           </View>
 
-          <View style={styles.row}>
+          <View style={[styles.row, isMobile && styles.rowMobile]}>
             {/* Recent Businesses */}
             <View style={[styles.card, { flex: 2 }]}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>Recent Businesses</Text>
               </View>
-              <View style={styles.tableHead}>
-                {['Business', 'Category', 'Plan', 'Status', 'Joined'].map(h => (
-                  <Text key={h} style={[styles.th, h === 'Business' && { flex: 1.5 }]}>{h}</Text>
-                ))}
-              </View>
               {stats.recentBusinesses.length === 0 ? (
                 <Text style={styles.emptyText}>No businesses yet</Text>
-              ) : stats.recentBusinesses.map(biz => (
-                <View key={biz.id} style={styles.tableRow}>
-                  <Text style={[styles.td, styles.tdBold, { flex: 1.5 }]} numberOfLines={1}>{biz.name}</Text>
-                  <Text style={styles.td} numberOfLines={1}>{biz.category}</Text>
-                  <Text style={[styles.td, { color: PLAN_COLORS[biz.plan] ?? COLORS.text, textTransform: 'capitalize' }]}>{biz.plan}</Text>
-                  <View style={styles.td}>
+              ) : isMobile ? stats.recentBusinesses.map(biz => (
+                <View key={biz.id} style={styles.mobileListCard}>
+                  <View style={styles.mobileListHead}>
+                    <Text style={styles.mobileListTitle}>{biz.name}</Text>
                     <View style={[styles.badge, { backgroundColor: STATUS_COLORS[biz.status]?.bg ?? COLORS.border }]}>
-                      <Text style={[styles.badgeText, { color: STATUS_COLORS[biz.status]?.text ?? COLORS.text }]}>
-                        {biz.status}
-                      </Text>
+                      <Text style={[styles.badgeText, { color: STATUS_COLORS[biz.status]?.text ?? COLORS.text }]}>{biz.status}</Text>
                     </View>
                   </View>
-                  <Text style={styles.td}>{biz.joined}</Text>
+                  <Text style={styles.mobileMetaText}>{biz.category}</Text>
+                  <Text style={[styles.mobileMetaText, { color: PLAN_COLORS[biz.plan] ?? COLORS.text, textTransform: 'capitalize' }]}>{biz.plan} plan</Text>
+                  <Text style={styles.mobileMetaText}>Joined {biz.joined}</Text>
                 </View>
-              ))}
+              )) : (
+                <>
+                  <View style={styles.tableHead}>
+                    {['Business', 'Category', 'Plan', 'Status', 'Joined'].map(h => (
+                      <Text key={h} style={[styles.th, h === 'Business' && { flex: 1.5 }]}>{h}</Text>
+                    ))}
+                  </View>
+                  {stats.recentBusinesses.map(biz => (
+                    <View key={biz.id} style={styles.tableRow}>
+                      <Text style={[styles.td, styles.tdBold, { flex: 1.5 }]} numberOfLines={1}>{biz.name}</Text>
+                      <Text style={styles.td} numberOfLines={1}>{biz.category}</Text>
+                      <Text style={[styles.td, { color: PLAN_COLORS[biz.plan] ?? COLORS.text, textTransform: 'capitalize' }]}>{biz.plan}</Text>
+                      <View style={styles.td}>
+                        <View style={[styles.badge, { backgroundColor: STATUS_COLORS[biz.status]?.bg ?? COLORS.border }]}>
+                          <Text style={[styles.badgeText, { color: STATUS_COLORS[biz.status]?.text ?? COLORS.text }] }>
+                            {biz.status}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.td}>{biz.joined}</Text>
+                    </View>
+                  ))}
+                </>
+              )}
             </View>
 
             {/* Plan Distribution */}
@@ -231,7 +249,9 @@ export function AdminDashboardScreen() {
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: COLORS.background },
   container: { padding: SPACING.xl, gap: SPACING.base },
+  containerMobile: { padding: SPACING.base },
   tabs: { flexDirection: 'row', gap: SPACING.xs },
+  tabsMobile: { flexWrap: 'wrap' },
   tab: {
     paddingHorizontal: SPACING.base,
     paddingVertical: SPACING.xs + 2,
@@ -244,6 +264,7 @@ const styles = StyleSheet.create({
   tabText: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary },
   tabTextActive: { color: COLORS.white, fontWeight: '600' },
   statsGrid: { flexDirection: 'row', gap: SPACING.base },
+  statsGridMobile: { flexWrap: 'wrap' },
   statCard: {
     flex: 1,
     backgroundColor: COLORS.surface,
@@ -252,6 +273,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  statCardMobile: { minWidth: '48%' },
   statIcon: {
     width: 42,
     height: 42,
@@ -270,6 +292,7 @@ const styles = StyleSheet.create({
   },
   statChangeText: { fontSize: FONTS.sizes.xs, color: COLORS.success },
   row: { flexDirection: 'row', gap: SPACING.base },
+  rowMobile: { flexDirection: 'column' },
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
@@ -286,6 +309,15 @@ const styles = StyleSheet.create({
   tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.sm, borderBottomWidth: 1, borderBottomColor: COLORS.surfaceAlt },
   td: { flex: 1, fontSize: FONTS.sizes.sm, color: COLORS.textSecondary },
   tdBold: { color: COLORS.text, fontWeight: '600' },
+  mobileListCard: {
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.surfaceAlt,
+    gap: 4,
+  },
+  mobileListHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: SPACING.sm },
+  mobileListTitle: { flex: 1, fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.text },
+  mobileMetaText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.full, alignSelf: 'flex-start' },
   badgeText: { fontSize: FONTS.sizes.xs, fontWeight: '600', textTransform: 'capitalize' },
   planRow: { marginTop: SPACING.base },

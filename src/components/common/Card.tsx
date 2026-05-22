@@ -27,12 +27,12 @@ export function Card({ children, style, onPress, title, subtitle, headerRight, a
 
   const inner = (
     <>
-      {accent && <View style={[styles.accentBar, { backgroundColor: accent }]} />}
+      {!!accent && <View style={[styles.accentBar, { backgroundColor: accent }]} />}
       {(title || headerRight) && (
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            {title && <Text style={styles.title}>{title}</Text>}
-            {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+            {!!title && <Text style={styles.title}>{title}</Text>}
+            {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
           </View>
           {headerRight && <View>{headerRight}</View>}
         </View>

@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
-  ActivityIndicator, Alert, TouchableOpacity, Modal, FlatList,
+  ActivityIndicator, Alert, TouchableOpacity, Modal, FlatList, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { format } from 'date-fns';
-import { COLORS, FONTS, SPACING, RADIUS, SHADOWS } from '../../lib/constants';
+import { COLORS, FONTS, SPACING, RADIUS, SHADOWS, BREAKPOINTS } from '../../lib/constants';
 import { Toggle } from '../../components/common/Toggle';
 import { Button } from '../../components/common/Button';
 import { supabase } from '../../lib/supabase';
@@ -43,6 +43,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 export function AdminPaymentScreen() {
   const [tab, setTab] = useState<'Config' | 'History'>('Config');
+  const { width } = useWindowDimensions();
+  const isMobile = width < BREAKPOINTS.tablet;
 
   // ─── Config state ───────────────────────────────────────────
   const [cfgLoading, setCfgLoading] = useState(true);
@@ -170,7 +172,7 @@ export function AdminPaymentScreen() {
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       {/* Summary banner */}
-      <View style={styles.banner}>
+      <View style={[styles.banner, isMobile && styles.bannerMobile]}>
         <View style={styles.bannerIcon}>
           <Ionicons name="card-outline" size={28} color={COLORS.white} />
         </View>
@@ -178,13 +180,13 @@ export function AdminPaymentScreen() {
           <Text style={styles.bannerTitle}>Snippe Payment Gateway</Text>
           <Text style={styles.bannerSub}>Configure your Snippe.sh account to collect plan subscription payments from business owners</Text>
         </View>
-        <View style={[styles.liveChip, cfg.is_live ? styles.liveOn : styles.liveOff]}>
+        <View style={[styles.liveChip, cfg.is_live ? styles.liveOn : styles.liveOff, isMobile && styles.liveChipMobile]}>
           <Text style={styles.liveChipText}>{cfg.is_live ? 'LIVE' : 'TEST'}</Text>
         </View>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabRow}>
+      <View style={[styles.tabRow, isMobile && styles.tabRowMobile]}>
         {(['Config', 'History'] as const).map(t => (
           <TouchableOpacity
             key={t}
@@ -216,7 +218,7 @@ export function AdminPaymentScreen() {
             <Text style={styles.settingHint}>API keys and webhook secrets are managed via Supabase Vault and environment variables — not stored here.</Text>
 
             {/* Method selector */}
-            <View style={styles.payMethodRow}>
+            <View style={[styles.payMethodRow, isMobile && styles.payMethodRowMobile]}>
               {([
                 { method: 'mobile' as const, label: 'Mobile Money', icon: 'phone-portrait-outline' },
                 { method: 'bank'   as const, label: 'Bank Transfer', icon: 'business-outline' },
@@ -328,7 +330,7 @@ export function AdminPaymentScreen() {
                   <Text style={styles.histMeta}>
                     {row.payment_type.toUpperCase()} · TZS {row.amount.toLocaleString()}{row.payer_phone ? ` · ${row.payer_phone}` : ''}
                   </Text>
-                  {row.gateway_reference && (
+                  {!!row.gateway_reference && (
                     <Text style={styles.histRef}>Ref: {row.gateway_reference}</Text>
                   )}
                   <Text style={styles.histDate}>
@@ -413,6 +415,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary, borderRadius: RADIUS.lg,
     padding: SPACING.lg, marginBottom: SPACING.lg,
   },
+  bannerMobile: { flexDirection: 'column' },
   bannerIcon:  { width: 48, height: 48, borderRadius: RADIUS.md, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   bannerTitle: { color: COLORS.white, fontSize: FONTS.sizes.lg, fontWeight: '700', marginBottom: 2 },
   bannerSub:   { color: 'rgba(255,255,255,0.75)', fontSize: FONTS.sizes.sm },
@@ -421,8 +424,10 @@ const styles = StyleSheet.create({
   liveOn:       { backgroundColor: COLORS.success },
   liveOff:      { backgroundColor: COLORS.textMuted },
   liveChipText: { color: COLORS.white, fontSize: FONTS.sizes.xs, fontWeight: '700' },
+  liveChipMobile: { marginTop: SPACING.xs },
 
   tabRow:       { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.lg },
+  tabRowMobile: { flexWrap: 'wrap' },
   tabBtn:       { paddingVertical: SPACING.sm, paddingHorizontal: SPACING.lg, borderRadius: RADIUS.md, backgroundColor: COLORS.surface },
   tabBtnActive: { backgroundColor: COLORS.primary },
   tabText:      { fontSize: FONTS.sizes.sm, fontWeight: '600', color: COLORS.textSecondary },
@@ -470,6 +475,7 @@ const styles = StyleSheet.create({
 
   // Payout method selector
   payMethodRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.md },
+  payMethodRowMobile: { flexDirection: 'column' },
   payMethodCard: {
     flex: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
     gap: SPACING.xs, paddingVertical: SPACING.md, borderRadius: RADIUS.md,

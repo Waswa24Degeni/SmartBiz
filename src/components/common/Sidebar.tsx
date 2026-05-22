@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -45,10 +45,15 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
   const NAV_ITEMS = navItems ?? DEFAULT_NAV_ITEMS;
 
   const handleLogout = () => {
-    Alert.alert('Sign out', 'Do you want to sign out now?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => { signOut(); } },
-    ]);
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-restricted-globals
+      if (confirm('Do you want to sign out?')) signOut();
+    } else {
+      Alert.alert('Sign out', 'Do you want to sign out now?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign out', style: 'destructive', onPress: () => { signOut(); } },
+      ]);
+    }
   };
 
   const renderNavItem = (item: { label: string; icon: string; route: string; badge?: number }) => {

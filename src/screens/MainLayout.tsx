@@ -64,8 +64,13 @@ export function MainLayout() {
         setStaffPerms(null);
         return;
       }
-      if (user.role === 'owner' || user.role === 'admin') {
+      if (user.role === 'owner') {
         setStaffPerms(['*']);
+        return;
+      }
+      // Platform admin should never be in MainLayout; give them no permissions
+      if (user.role === 'admin') {
+        setStaffPerms([]);
         return;
       }
       const { data } = await supabase
@@ -79,7 +84,8 @@ export function MainLayout() {
         setStaffPerms([]);
         return;
       }
-      const perms = Array.isArray((data as any).permissions) ? (data as any).permissions : [];
+      const perms: string[] = Array.isArray((data as any).permissions) ? (data as any).permissions : [];
+      // Cashier staff get pos access; include their explicit permissions
       setStaffPerms(perms);
     };
 
@@ -87,7 +93,9 @@ export function MainLayout() {
   }, [user, business?.id]);
 
   const hasAccess = React.useCallback((r: Route) => {
-    if (user?.role === 'owner' || user?.role === 'admin') return true;
+    // Platform admin accounts belong in AdminLayout, not here
+    if (user?.role === 'admin') return false;
+    if (user?.role === 'owner') return true;
     if (!staffPerms) return false;
     return staffPerms.includes('*') || staffPerms.includes(ROUTE_PERMISSIONS[r]);
   }, [user?.role, staffPerms]);

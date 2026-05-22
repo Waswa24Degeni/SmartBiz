@@ -340,10 +340,10 @@ export function InvoicesScreen() {
             <Text style={styles.sectionTitle}>Customer</Text>
             <View style={styles.customerCard}>
               <Text style={styles.customerName}>{invoice.customer_name}</Text>
-              {invoice.customer_phone && (
+              {!!invoice.customer_phone && (
                 <Text style={styles.customerMeta}>📱 {invoice.customer_phone}</Text>
               )}
-              {invoice.customer_email && (
+              {!!invoice.customer_email && (
                 <Text style={styles.customerMeta}>✉️ {invoice.customer_email}</Text>
               )}
             </View>
@@ -605,7 +605,7 @@ export function InvoicesScreen() {
                     </View>
                     <View style={styles.invoiceCardMid}>
                       <Text style={styles.invoiceCustomer}>{item.customer_name}</Text>
-                      {item.customer_phone && (
+                      {!!item.customer_phone && (
                         <Text style={styles.invoiceMeta}>📱 {item.customer_phone}</Text>
                       )}
                       <Text style={styles.invoiceMeta}>

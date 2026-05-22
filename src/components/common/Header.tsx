@@ -74,7 +74,7 @@ export function Header({
       </View>
 
       <Text style={styles.title}>{title}</Text>
-      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+      {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
     </View>
   );
 }

@@ -39,7 +39,7 @@ export interface Subscription {
   id: string;
   business_id: string;
   plan: SubscriptionPlan;
-  status: 'active' | 'expired' | 'trial' | 'cancelled';
+  status: 'active' | 'expired' | 'trial' | 'cancelled' | 'pending';
   starts_at: string;
   expires_at: string;
   billing_cycle: 'monthly' | 'yearly';

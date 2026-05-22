@@ -3,7 +3,7 @@ import { View, StyleSheet, Text, TouchableOpacity, ScrollView, useWindowDimensio
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS, FONTS, SPACING, BREAKPOINTS } from '../../lib/constants';
+import { COLORS, FONTS, SPACING, RADIUS, BREAKPOINTS } from '../../lib/constants';
 import { AdminDashboardScreen } from './AdminDashboardScreen';
 import { AdminUsersScreen } from './AdminUsersScreen';
 import { AdminBusinessesScreen } from './AdminBusinessesScreen';
@@ -16,14 +16,14 @@ import { AdminRevenueScreen } from './AdminRevenueScreen';
 export type AdminRoute = 'Overview' | 'Users' | 'Businesses' | 'Revenue' | 'Plans' | 'Support' | 'Payments' | 'Settings';
 
 const NAV_ITEMS: { route: AdminRoute; icon: string; label: string }[] = [
-  { route: 'Overview',  icon: 'grid-outline',         label: 'Overview' },
-  { route: 'Users',     icon: 'people-outline',        label: 'Users' },
-  { route: 'Businesses',icon: 'business-outline',      label: 'Businesses' },
-  { route: 'Revenue',   icon: 'bar-chart-outline',     label: 'Revenue' },
-  { route: 'Plans',     icon: 'pricetag-outline',      label: 'Plans' },
-  { route: 'Payments',  icon: 'card-outline',          label: 'Payments' },
-  { route: 'Support',   icon: 'help-circle-outline',   label: 'Support' },
-  { route: 'Settings',  icon: 'settings-outline',       label: 'Settings' },
+  { route: 'Overview', icon: 'grid-outline', label: 'Overview' },
+  { route: 'Users', icon: 'people-outline', label: 'Users' },
+  { route: 'Businesses', icon: 'business-outline', label: 'Businesses' },
+  { route: 'Revenue', icon: 'bar-chart-outline', label: 'Revenue' },
+  { route: 'Plans', icon: 'pricetag-outline', label: 'Plans' },
+  { route: 'Payments', icon: 'card-outline', label: 'Payments' },
+  { route: 'Support', icon: 'help-circle-outline', label: 'Support' },
+  { route: 'Settings', icon: 'settings-outline', label: 'Settings' },
 ];
 
 function AdminSidebarContent({
@@ -78,29 +78,21 @@ function AdminSidebarContent({
             <TouchableOpacity
               key={item.route}
               style={[styles.navItem, collapsed && styles.navItemCollapsed, active && styles.navItemActive]}
-              onPress={() => { setRoute(item.route); onClose?.(); }}
+              onPress={() => {
+                setRoute(item.route);
+                onClose?.();
+              }}
             >
-              <Ionicons
-                name={item.icon as any}
-                size={18}
-                color={active ? COLORS.accent : COLORS.textMuted}
-              />
-              {!collapsed && (
-                <Text style={[styles.navLabel, active && styles.navLabelActive]}>
-                  {item.label}
-                </Text>
-              )}
+              <Ionicons name={item.icon as any} size={18} color={active ? COLORS.accent : COLORS.textMuted} />
+              {!collapsed && <Text style={[styles.navLabel, active && styles.navLabelActive]}>{item.label}</Text>}
             </TouchableOpacity>
           );
         })}
       </ScrollView>
 
-      {/* Profile footer */}
       <View style={styles.profileFooter}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user?.full_name?.charAt(0).toUpperCase() ?? 'A'}
-          </Text>
+          <Text style={styles.avatarText}>{user?.full_name?.charAt(0).toUpperCase() ?? 'A'}</Text>
         </View>
         {!collapsed && (
           <View style={styles.profileInfo}>
@@ -126,24 +118,33 @@ export function AdminLayout() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
+  const drawerWidth = Math.min(Math.max(width * 0.82, 248), 320);
 
   const renderContent = () => {
     switch (route) {
-      case 'Overview': return <AdminDashboardScreen />;
-      case 'Users': return <AdminUsersScreen />;
-      case 'Businesses': return <AdminBusinessesScreen />;
-      case 'Revenue': return <AdminRevenueScreen />;
-      case 'Plans': return <AdminPlansScreen />;
-      case 'Payments': return <AdminPaymentScreen />;
-      case 'Support': return <AdminSupportScreen />;
-      case 'Settings': return <AdminSettingsScreen />;
-      default: return <AdminDashboardScreen />;
+      case 'Overview':
+        return <AdminDashboardScreen />;
+      case 'Users':
+        return <AdminUsersScreen />;
+      case 'Businesses':
+        return <AdminBusinessesScreen />;
+      case 'Revenue':
+        return <AdminRevenueScreen />;
+      case 'Plans':
+        return <AdminPlansScreen />;
+      case 'Payments':
+        return <AdminPaymentScreen />;
+      case 'Support':
+        return <AdminSupportScreen />;
+      case 'Settings':
+        return <AdminSettingsScreen />;
+      default:
+        return <AdminDashboardScreen />;
     }
   };
 
   return (
-    <View style={[styles.root, { paddingBottom: insets.bottom }]}>
-      {/* Persistent sidebar — tablet/desktop */}
+    <View style={[styles.root, { paddingBottom: insets.bottom }]}> 
       {!isMobile && (
         <AdminSidebarContent
           route={route}
@@ -151,19 +152,14 @@ export function AdminLayout() {
           user={user}
           signOut={signOut}
           collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
+          onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
         />
       )}
 
-      {/* Mobile drawer overlay */}
       {isMobile && drawerOpen && (
         <>
-          <TouchableOpacity
-            style={styles.overlay}
-            activeOpacity={1}
-            onPress={() => setDrawerOpen(false)}
-          />
-          <View style={styles.drawer}>
+          <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setDrawerOpen(false)} />
+          <View style={[styles.drawer, { width: drawerWidth }]}>
             <AdminSidebarContent
               route={route}
               setRoute={setRoute}
@@ -176,18 +172,15 @@ export function AdminLayout() {
         </>
       )}
 
-      {/* Main content area */}
       <View style={styles.main}>
-        {/* Top bar */}
-        <View style={[styles.topBar, { paddingTop: insets.top + SPACING.sm }]}>
-          <View style={styles.topLeft}>
-            {isMobile && (
+        <View style={[styles.topBar, isMobile && styles.topBarMobile, { paddingTop: insets.top + SPACING.sm }]}>
+          <View style={[styles.topLeft, isMobile && styles.topLeftMobile]}>
+            {isMobile ? (
               <TouchableOpacity onPress={() => setDrawerOpen(true)} style={styles.menuBtn}>
                 <Ionicons name="menu-outline" size={24} color={COLORS.text} />
               </TouchableOpacity>
-            )}
-            {!isMobile && (
-              <TouchableOpacity onPress={() => setSidebarCollapsed((prev) => !prev)} style={styles.menuBtn}>
+            ) : (
+              <TouchableOpacity onPress={() => setSidebarCollapsed(prev => !prev)} style={styles.menuBtn}>
                 <Ionicons
                   name={sidebarCollapsed ? 'chevron-forward-outline' : 'chevron-back-outline'}
                   size={22}
@@ -197,7 +190,7 @@ export function AdminLayout() {
             )}
             <View>
               <Text style={styles.pageTitle}>{route}</Text>
-              <Text style={styles.pageSub}>SmartBiz Admin Panel</Text>
+              {!isMobile && <Text style={styles.pageSub}>SmartBiz Admin Panel</Text>}
             </View>
           </View>
           <View style={styles.topRight}>
@@ -208,10 +201,7 @@ export function AdminLayout() {
           </View>
         </View>
 
-        {/* Screen content */}
-        <View style={styles.content}>
-          {renderContent()}
-        </View>
+        <View style={styles.content}>{renderContent()}</View>
       </View>
     </View>
   );
@@ -219,7 +209,6 @@ export function AdminLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, flexDirection: 'row', backgroundColor: COLORS.background },
-  // Sidebar
   sidebar: {
     backgroundColor: '#0F2318',
     paddingTop: 20,
@@ -260,7 +249,6 @@ const styles = StyleSheet.create({
   navItemActive: { backgroundColor: COLORS.primaryLight },
   navLabel: { color: COLORS.textMuted, fontSize: FONTS.sizes.sm },
   navLabelActive: { color: COLORS.white, fontWeight: '600' },
-  // Profile footer
   profileFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -282,7 +270,7 @@ const styles = StyleSheet.create({
   profileName: { color: COLORS.white, fontSize: FONTS.sizes.sm, fontWeight: '600' },
   profileRole: { color: COLORS.textMuted, fontSize: FONTS.sizes.xs },
   logoutBtn: { padding: 4 },
-  // Mobile drawer
+
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -293,10 +281,10 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     bottom: 0,
-    width: 240,
     zIndex: 20,
   },
-  // Top bar
+
+  main: { flex: 1 },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -307,7 +295,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+  topBarMobile: {
+    paddingHorizontal: SPACING.base,
+    paddingBottom: SPACING.sm,
+  },
   topLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  topLeftMobile: { flex: 1, minWidth: 0 },
   menuBtn: { padding: 4 },
   pageTitle: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text },
   pageSub: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, marginTop: 2 },
@@ -317,15 +310,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
   },
   adminBadgeText: { color: COLORS.white, fontSize: FONTS.sizes.xs, fontWeight: '700' },
-  // Main
-  main: { flex: 1 },
   content: { flex: 1 },
-  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.sm },
-  placeholderTitle: { fontSize: FONTS.sizes.lg, fontWeight: '600', color: COLORS.text },
-  placeholderSub: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary },
 });

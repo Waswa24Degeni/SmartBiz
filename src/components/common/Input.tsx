@@ -59,7 +59,7 @@ export function Input({
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {label && (
+      {!!label && (
         <Text style={[styles.label, focused && styles.labelFocused]}>{label}</Text>
       )}
       <Animated.View
@@ -69,7 +69,7 @@ export function Input({
           focused && styles.inputWrapFocused,
         ]}
       >
-        {leftIcon && (
+        {!!leftIcon && (
           <Ionicons
             name={leftIcon as any}
             size={18}
@@ -85,7 +85,7 @@ export function Input({
           onBlur={handleBlur}
           {...props}
         />
-        {effectiveRightIcon && (
+        {!!effectiveRightIcon && (
           <TouchableOpacity
             onPress={isPassword ? () => setShowPassword(v => !v) : onRightIconPress}
             style={styles.rightIcon}
@@ -94,7 +94,7 @@ export function Input({
           </TouchableOpacity>
         )}
       </Animated.View>
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {!!error && <Text style={styles.errorText}>{error}</Text>}
     </View>
   );
 }

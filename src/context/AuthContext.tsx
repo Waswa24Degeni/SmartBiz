@@ -2,12 +2,13 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { User, Business } from '../types';
+import { User, Business, Subscription } from '../types';
 
 interface AuthContextValue {
   session: Session | null;
   user: User | null;
   business: Business | null;
+  subscription: Subscription | null;
   loading: boolean;
   profileLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -22,6 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [business, setBusiness] = useState<Business | null>(null);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
   // Tracks whether an in-flight profile fetch is happening after signIn
   const [profileLoading, setProfileLoading] = useState(false);
@@ -51,6 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUser(null);
         setBusiness(null);
+        setSubscription(null);
         setProfileLoading(false);
         setLoading(false);
       }
@@ -193,8 +196,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.error('[AuthContext] business fetch error:', bizErr.message, bizErr.code);
         }
 
+        let resolvedBiz: Record<string, any> | null = null;
         if (bizByOwner) {
           setBusiness(bizByOwner as Business);
+          resolvedBiz = bizByOwner;
           // Patch users.business_id if it's missing or out of sync
           if (!p.business_id || p.business_id !== bizByOwner.id) {
             supabase.from('users')
@@ -212,9 +217,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (bizByIdErr) {
             console.error('[AuthContext] business fallback fetch error:', bizByIdErr.message, bizByIdErr.code);
           }
-          if (bizById) setBusiness(bizById as Business);
+          if (bizById) { setBusiness(bizById as Business); resolvedBiz = bizById; }
         } else {
           console.warn('[AuthContext] No business found for owner. supabaseUser.id=', supabaseUser.id, 'profile.business_id=', p.business_id);
+        }
+
+        // ── Step 4: load subscription (gates dashboard access) ────────────────
+        if (resolvedBiz) {
+          const { data: sub } = await supabase
+            .from('subscriptions')
+            .select('id, business_id, plan, status, billing_cycle, starts_at, expires_at, created_at')
+            .eq('business_id', resolvedBiz.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          setSubscription((sub as Subscription) ?? null);
+        } else {
+          setSubscription(null);
         }
       }
     } catch (e: any) {
@@ -271,7 +290,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, business, loading, profileLoading, signIn, signUp, signOut, refreshUser }}>
+    <AuthContext.Provider value={{ session, user, business, subscription, loading, profileLoading, signIn, signUp, signOut, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

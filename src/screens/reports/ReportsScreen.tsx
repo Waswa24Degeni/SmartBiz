@@ -24,6 +24,25 @@ type TopItemRow = {
   revenue: number;
 };
 
+type PaymentRow = {
+  id: string;
+  payment_type: string;
+  amount: number;
+  payer_phone: string | null;
+  status: string;
+  gateway_reference: string | null;
+  metadata: Record<string, any>;
+  initiated_at: string;
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  completed: COLORS.success,
+  pending:   COLORS.warning,
+  processing: COLORS.info,
+  failed:    COLORS.error,
+  expired:   COLORS.textMuted,
+};
+
 export function ReportsScreen() {
   const { business } = useAuth();
   const { width } = useWindowDimensions();
@@ -33,6 +52,7 @@ export function ReportsScreen() {
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('month');
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [topItems, setTopItems] = useState<TopItemRow[]>([]);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
 
   const periodMeta = useMemo(() => {
     if (period === 'day') return { days: 1, label: 'Day' };
@@ -102,12 +122,25 @@ export function ReportsScreen() {
     setLoading(false);
   }, [business?.id, sinceDate]);
 
+  const fetchPayments = useCallback(async () => {
+    if (!business?.id) return;
+    const { data } = await supabase
+      .from('payments')
+      .select('id, payment_type, amount, payer_phone, status, gateway_reference, metadata, initiated_at')
+      .eq('business_id', business.id)
+      .order('initiated_at', { ascending: false })
+      .limit(100);
+    setPayments((data as PaymentRow[]) ?? []);
+  }, [business?.id]);
+
   useEffect(() => {
     fetchReport();
-  }, [fetchReport]);
+    fetchPayments();
+  }, [fetchReport, fetchPayments]);
 
   useRealtimeSubscription('reports-sales-rt', 'sales', () => fetchReport(true), !!business?.id);
   useRealtimeSubscription('reports-items-rt', 'sale_items', () => fetchReport(true), !!business?.id);
+  useRealtimeSubscription('reports-payments-rt', 'payments', () => fetchPayments(), !!business?.id);
 
   const completedRevenue = sales
     .filter((s) => s.status === 'completed' || s.status === 'active')
@@ -115,10 +148,15 @@ export function ReportsScreen() {
   const completedCount = sales.filter((s) => s.status === 'completed').length;
   const cancelledCount = sales.filter((s) => s.status === 'cancelled').length;
 
+  const planPayTotal = payments
+    .filter((p) => p.status === 'completed')
+    .reduce((sum, p) => sum + Number(p.amount), 0);
+
   const summaryCards = [
     { key: 'revenue', icon: 'cash-outline', color: COLORS.success, value: `TZS ${completedRevenue.toLocaleString()}`, label: 'Revenue' },
     { key: 'completed', icon: 'checkmark-circle-outline', color: COLORS.info, value: String(completedCount), label: 'Completed Orders' },
     { key: 'cancelled', icon: 'close-circle-outline', color: COLORS.error, value: String(cancelledCount), label: 'Cancelled Orders' },
+    { key: 'planfees', icon: 'card-outline', color: COLORS.accent, value: `TZS ${planPayTotal.toLocaleString()}`, label: 'Plan Fees Paid' },
   ];
 
   const escapeHtml = (value: string) => value
@@ -155,6 +193,17 @@ export function ReportsScreen() {
         </tr>
       `).join('');
 
+    const paymentRows = payments.slice(0, 30).map((p) => `
+        <tr>
+          <td>${escapeHtml(p.payment_type)}</td>
+          <td>${escapeHtml(p.metadata?.plan ?? '—')}</td>
+          <td style="text-align:right;">TZS ${Number(p.amount).toLocaleString()}</td>
+          <td>${escapeHtml(p.payer_phone ?? '—')}</td>
+          <td>${escapeHtml(p.status)}</td>
+          <td>${format(new Date(p.initiated_at), 'dd MMM yyyy')}</td>
+        </tr>
+      `).join('');
+
     return `
         <html>
           <head>
@@ -181,6 +230,7 @@ export function ReportsScreen() {
               <div class="card"><div class="label">Revenue</div><div class="value">TZS ${completedRevenue.toLocaleString()}</div></div>
               <div class="card"><div class="label">Completed Orders</div><div class="value">${completedCount}</div></div>
               <div class="card"><div class="label">Cancelled Orders</div><div class="value">${cancelledCount}</div></div>
+              <div class="card"><div class="label">Plan Fees Paid</div><div class="value">TZS ${planPayTotal.toLocaleString()}</div></div>
             </div>
 
             <h2>Top Products</h2>
@@ -193,6 +243,12 @@ export function ReportsScreen() {
             <table>
               <thead><tr><th>Order</th><th>Status</th><th>Date</th><th style="text-align:right;">Total</th></tr></thead>
               <tbody>${orderRows}</tbody>
+            </table>
+
+            <h2>Payment Transactions</h2>
+            <table>
+              <thead><tr><th>Type</th><th>Plan</th><th style="text-align:right;">Amount</th><th>Phone</th><th>Status</th><th>Date</th></tr></thead>
+              <tbody>${paymentRows || '<tr><td colspan="6">No payment transactions found.</td></tr>'}</tbody>
             </table>
           </body>
         </html>
@@ -374,6 +430,40 @@ export function ReportsScreen() {
               </View>
             </ScrollView>
           </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Payment Transactions</Text>
+            {payments.length === 0 ? (
+              <Text style={styles.emptyText}>No payment transactions found</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={{ minWidth: isMobile ? 620 : 0, flex: 1 }}>
+                  <View style={[styles.row, styles.payHeadRow]}>
+                    <Text style={[styles.payHeadCell, { flex: 0.9 }]}>Type</Text>
+                    <Text style={[styles.payHeadCell, { flex: 0.8 }]}>Plan</Text>
+                    <Text style={[styles.payHeadCell, { flex: 1.2, textAlign: 'right' }]}>Amount</Text>
+                    <Text style={[styles.payHeadCell, { flex: 1 }]}>Phone</Text>
+                    <Text style={[styles.payHeadCell, { flex: 0.8 }]}>Status</Text>
+                    <Text style={[styles.payHeadCell, { flex: 1.1 }]}>Date</Text>
+                  </View>
+                  {payments.map((p, idx) => (
+                    <View key={p.id} style={[styles.row, idx % 2 === 1 && styles.rowAlt]}>
+                      <Text style={[styles.cell, { flex: 0.9 }]} numberOfLines={1}>{p.payment_type}</Text>
+                      <Text style={[styles.cell, { flex: 0.8 }]} numberOfLines={1}>{p.metadata?.plan ?? '—'}</Text>
+                      <Text style={[styles.cell, { flex: 1.2, textAlign: 'right' }]}>TZS {Number(p.amount).toLocaleString()}</Text>
+                      <Text style={[styles.cell, { flex: 1 }]} numberOfLines={1}>{p.payer_phone ?? '—'}</Text>
+                      <View style={{ flex: 0.8, alignItems: 'flex-start' }}>
+                        <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[p.status] ?? COLORS.textMuted }]}>
+                          <Text style={styles.statusBadgeText}>{p.status}</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.cell, { flex: 1.1 }]}>{format(new Date(p.initiated_at), 'dd MMM yyyy')}</Text>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+          </View>
         </>
       )}
     </ScrollView>
@@ -466,4 +556,13 @@ const styles = StyleSheet.create({
   },
   cell: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
   emptyText: { color: COLORS.textMuted, textAlign: 'center', paddingVertical: SPACING.md, fontSize: FONTS.sizes.sm },
+  payHeadRow: { backgroundColor: COLORS.background },
+  payHeadCell: { fontSize: FONTS.sizes.xs, fontWeight: '700', color: COLORS.text },
+  rowAlt: { backgroundColor: COLORS.background + '80' },
+  statusBadge: {
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  statusBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white, textTransform: 'capitalize' },
 });

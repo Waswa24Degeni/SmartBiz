@@ -384,6 +384,8 @@ export function ReportsScreen() {
     return dest;
   };
 
+  const getAndroidDownloadsUri = (fileName: string) => `file:///storage/emulated/0/Download/${fileName}`;
+
   const triggerWebDownloadFromUri = async (uri: string, fileName: string) => {
     const response = await fetch(uri);
     const blob = await response.blob();
@@ -413,6 +415,19 @@ export function ReportsScreen() {
 
     const html = reportType === 'sales' ? buildSalesReportPdf() : buildAdvancedReportPdf();
     const localPdf = await renderPdfToAppStorage(html);
+
+    if (Platform.OS === 'android') {
+      const fileName = `smartbiz-${reportType}-report-${period}-${Date.now()}.pdf`;
+      const targetUri = getAndroidDownloadsUri(fileName);
+      try {
+        await FileSystem.copyAsync({ from: localPdf, to: targetUri });
+        Alert.alert('Saved', `PDF saved to Downloads:\n${targetUri}`);
+        return;
+      } catch {
+        // Some devices restrict direct Downloads writes in managed apps.
+      }
+    }
+
     Alert.alert('Saved', `PDF saved to app storage:\n${localPdf}`);
   };
 
@@ -452,6 +467,17 @@ export function ReportsScreen() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       return;
+    }
+
+    if (Platform.OS === 'android') {
+      const targetUri = getAndroidDownloadsUri(fileName);
+      try {
+        await FileSystem.writeAsStringAsync(targetUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
+        Alert.alert('Saved', `CSV saved to Downloads:\n${targetUri}`);
+        return;
+      } catch {
+        // Some devices restrict direct Downloads writes in managed apps.
+      }
     }
 
     const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;

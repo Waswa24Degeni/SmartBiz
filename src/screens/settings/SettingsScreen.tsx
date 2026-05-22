@@ -147,7 +147,7 @@ function ProfileSection() {
             quality: 0.8,
           });
           if (!result.canceled && result.assets[0]) {
-            await uploadLogo(result.assets[0].uri);
+            await uploadLogo(result.assets[0]);
           }
         },
       },
@@ -161,7 +161,7 @@ function ProfileSection() {
             quality: 0.8,
           });
           if (!result.canceled && result.assets[0]) {
-            await uploadLogo(result.assets[0].uri);
+            await uploadLogo(result.assets[0]);
           }
         },
       },
@@ -169,28 +169,63 @@ function ProfileSection() {
     ]);
   };
 
-  const uploadLogo = async (uri: string) => {
+  const uploadLogo = async (asset: ImagePicker.ImagePickerAsset) => {
     if (!business?.id) return;
     setLogoUploading(true);
     try {
-      // Fetch the image as a blob
-      const response = await fetch(uri);
-      const blob     = await response.blob();
-      const ext      = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-      const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+      const mimeType = asset.mimeType ?? 'image/jpeg';
+      const fallbackExt = mimeType.includes('png') ? 'png' : 'jpg';
+      const fileNameFromAsset = asset.fileName ?? '';
+      const extFromName = fileNameFromAsset.includes('.')
+        ? fileNameFromAsset.split('.').pop()?.toLowerCase()
+        : undefined;
+      const ext = extFromName || fallbackExt;
       const fileName = `logo-${business.id}-${Date.now()}.${ext}`;
       const filePath = `business-logos/${fileName}`;
 
-      // Upload to Supabase Storage bucket "business-assets"
-      const { error: uploadErr } = await supabase.storage
-        .from('business-assets')
-        .upload(filePath, blob, { contentType: mimeType, upsert: true });
+      let fileBody: Blob | File;
 
-      if (uploadErr) throw uploadErr;
+      // Web: use the native File object directly from image picker to avoid fetch(uri) failures.
+      if (Platform.OS === 'web') {
+        const maybeFile = (asset as any).file as File | undefined;
+        if (maybeFile) {
+          fileBody = maybeFile;
+        } else {
+          const response = await fetch(asset.uri);
+          fileBody = await response.blob();
+        }
+      } else {
+        const response = await fetch(asset.uri);
+        fileBody = await response.blob();
+      }
+
+      // Try preferred bucket first, then fallback bucket name used in some deployments.
+      const candidateBuckets = ['business-assets', 'business-logos'];
+      let uploadedBucket: string | null = null;
+      let lastUploadError: any = null;
+
+      for (const bucket of candidateBuckets) {
+        const { error: uploadErr } = await supabase.storage
+          .from(bucket)
+          // Do not use upsert here; RLS often blocks upsert unless UPDATE/SELECT are also granted.
+          .upload(filePath, fileBody, { contentType: mimeType, upsert: false });
+
+        if (!uploadErr) {
+          uploadedBucket = bucket;
+          lastUploadError = null;
+          break;
+        }
+
+        lastUploadError = uploadErr;
+      }
+
+      if (!uploadedBucket) {
+        throw lastUploadError;
+      }
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
-        .from('business-assets')
+        .from(uploadedBucket)
         .getPublicUrl(filePath);
 
       // Save to businesses table
@@ -205,7 +240,20 @@ function ProfileSection() {
       await refreshUser();
       Alert.alert('Logo updated', 'Your business logo has been saved.');
     } catch (e: any) {
-      Alert.alert('Upload failed', e?.message ?? 'Could not upload logo. Please try again.');
+      const msg = String(e?.message ?? 'Could not upload logo. Please try again.');
+      if (/bucket|not found/i.test(msg)) {
+        Alert.alert(
+          'Upload failed',
+          'Storage bucket missing. Create a public bucket named business-assets (or business-logos) in Supabase Storage, then try again.'
+        );
+      } else if (/row-level security|policy|permission|unauthorized|403/i.test(msg)) {
+        Alert.alert(
+          'Upload failed',
+          'Storage policy blocked upload. Add Storage policies for authenticated users to INSERT (and optionally SELECT/UPDATE) in your logo bucket.'
+        );
+      } else {
+        Alert.alert('Upload failed', msg);
+      }
     } finally {
       setLogoUploading(false);
     }

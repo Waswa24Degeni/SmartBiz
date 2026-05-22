@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   useWindowDimensions,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -441,6 +442,7 @@ export function POSScreen() {
                   const initial = p.name.charAt(0).toUpperCase();
                   const colorPalette = ['#1B3A2D', '#C49A2A', '#2563EB', '#059669', '#D97706', '#DC2626'];
                   const dotColor = colorPalette[p.name.charCodeAt(0) % colorPalette.length];
+                  const lowStock = p.stock_quantity <= Math.max(1, p.low_stock_threshold ?? 0);
                   return (
                     <Pressable
                       key={p.id}
@@ -451,12 +453,32 @@ export function POSScreen() {
                       ]}
                       onPress={() => addItem(p)}
                     >
-                      <View style={[styles.productInitial, { backgroundColor: dotColor + '18', borderColor: dotColor + '30' }]}>
-                        <Text style={[styles.productInitialText, { color: dotColor }]}>{initial}</Text>
+                      <View style={styles.productMediaWrap}>
+                        {p.image_url ? (
+                          <Image source={{ uri: p.image_url }} style={styles.productImage} />
+                        ) : (
+                          <View style={[styles.productInitial, { backgroundColor: dotColor + '18', borderColor: dotColor + '30' }]}>
+                            <Text style={[styles.productInitialText, { color: dotColor }]}>{initial}</Text>
+                          </View>
+                        )}
                       </View>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text numberOfLines={2} ellipsizeMode="tail" style={styles.productName}>{p.name}</Text>
-                        <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productMeta}>{p.category?.name ?? 'General'} · {p.stock_quantity} {p.unit}</Text>
+                        <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productMeta}>
+                          {p.category?.name ?? 'General'}
+                        </Text>
+                        <View style={styles.productMetaRow}>
+                          <View style={[styles.stockPill, lowStock && styles.stockPillLow]}>
+                            <Ionicons
+                              name={lowStock ? 'warning-outline' : 'checkmark-circle-outline'}
+                              size={11}
+                              color={lowStock ? COLORS.error : COLORS.success}
+                            />
+                            <Text style={[styles.stockPillText, lowStock && styles.stockPillTextLow]}>
+                              {p.stock_quantity} {p.unit}
+                            </Text>
+                          </View>
+                        </View>
                       </View>
                       <View style={styles.productRight}>
                         <Text style={styles.productPrice}>{currency} {Number(p.selling_price).toLocaleString()}</Text>
@@ -839,8 +861,46 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...SHADOWS.xs,
   } as any,
+  productMediaWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  productImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceAlt,
+  },
   productName: { fontSize: FONTS.sizes.sm, color: COLORS.text, fontWeight: '700', letterSpacing: -0.1 },
   productMeta: { marginTop: 2, fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
+  productMetaRow: {
+    marginTop: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stockPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.successLight,
+  },
+  stockPillLow: {
+    backgroundColor: COLORS.errorLight,
+  },
+  stockPillText: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.success,
+    fontWeight: '700',
+  },
+  stockPillTextLow: {
+    color: COLORS.error,
+  },
   productPrice: { fontSize: FONTS.sizes.sm, color: COLORS.primary, fontWeight: '800' },
   addBtn: {
     minWidth: 110,

@@ -34,22 +34,23 @@ interface StaffRow {
 }
 
 const PERMISSION_OPTIONS = [
-  { key: 'dashboard', label: 'Dashboard' },
-  { key: 'inventory', label: 'Inventory' },
-  { key: 'pos', label: 'POS' },
-  { key: 'reports', label: 'Reports' },
-  { key: 'messages', label: 'Messages' },
-  { key: 'bills', label: 'Bills' },
-  { key: 'customers', label: 'Customers' },
-  { key: 'settings', label: 'Settings' },
-  { key: 'support', label: 'Support' },
+  { key: 'dashboard',   label: 'Dashboard' },
+  { key: 'inventory',   label: 'Inventory' },
+  { key: 'pos',         label: 'POS' },
+  { key: 'reports',     label: 'Reports' },
+  { key: 'messages',    label: 'Messages' },
+  { key: 'bills',       label: 'Bills' },
+  { key: 'customers',   label: 'Customers' },
+  { key: 'pos',         label: 'Wallet' },
+  { key: 'settings',    label: 'Settings' },
+  { key: 'support',     label: 'Support' },
   { key: 'staff_manage', label: 'Staff Management' },
 ] as const;
 
 const ROLE_DEFAULT_PERMS: Record<'manager' | 'cashier' | 'waiter', string[]> = {
   manager: ['dashboard', 'inventory', 'pos', 'reports', 'messages', 'bills', 'customers', 'settings', 'support'],
-  cashier: ['dashboard', 'pos', 'bills', 'messages'],
-  waiter: ['pos', 'bills', 'messages'],
+  cashier: ['dashboard', 'pos', 'bills', 'messages'],  // pos key also grants Wallet access
+  waiter:  ['pos', 'bills', 'messages'],
 };
 
 const onboardingClient = createClient(
@@ -528,11 +529,11 @@ export function StaffScreen() {
 
             <Text style={styles.label}>Permissions</Text>
             <View style={styles.permissionGrid}>
-              {PERMISSION_OPTIONS.map((p) => {
+              {PERMISSION_OPTIONS.map((p, idx) => {
                 const selected = permissions.includes(p.key);
                 return (
                   <TouchableOpacity
-                    key={p.key}
+                    key={`${p.key}-${idx}`}
                     style={[styles.permChip, selected && styles.permChipActive]}
                     onPress={() => togglePermission(p.key)}
                   >

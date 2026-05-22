@@ -16,13 +16,12 @@ const SETTINGS_MENU = [
   { id: 'Profile',          label: 'Profile',           icon: 'person-outline' },
   { id: 'Notifications',    label: 'Notifications',     icon: 'notifications-outline' },
   { id: 'CheckoutSettings', label: 'Checkout settings', icon: 'settings-outline' },
-  { id: 'Payment',          label: 'Payment',           icon: 'card-outline' },
   { id: 'Subscription',     label: 'Subscription',      icon: 'ribbon-outline' },
   { id: 'LanguageRegion',   label: 'Language & Region', icon: 'globe-outline' },
   { id: 'Security',         label: 'Security',          icon: 'shield-outline' },
 ];
 
-type SettingSection = 'Profile' | 'Notifications' | 'CheckoutSettings' | 'Payment' | 'Subscription' | 'Security' | 'LanguageRegion';
+type SettingSection = 'Profile' | 'Notifications' | 'CheckoutSettings' | 'Subscription' | 'Security' | 'LanguageRegion';
 
 export function SettingsScreen() {
   const { width } = useWindowDimensions();
@@ -78,7 +77,6 @@ export function SettingsScreen() {
           {activeSection === 'Profile'          && <ProfileSection />}
           {activeSection === 'Notifications'    && <NotificationsSection />}
           {activeSection === 'CheckoutSettings' && <CheckoutSettingsSection />}
-          {activeSection === 'Payment'         && <PaymentSection />}
           {activeSection === 'Subscription'     && <SubscriptionSection />}
           {activeSection === 'Security'         && <SecuritySection />}
           {activeSection === 'LanguageRegion'   && <LanguageRegionSection />}

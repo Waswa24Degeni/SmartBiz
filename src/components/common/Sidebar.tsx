@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Platform, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,9 +27,16 @@ const OTHER_ITEMS = [
 export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCollapse, navItems }: SidebarProps) {
   const insets = useSafeAreaInsets();
   const { user, business, signOut } = useAuth();
+  const [logoFailed, setLogoFailed] = React.useState(false);
 
   const bName     = business?.name ?? 'SmartBiz';
   const bInitials = getInitials(bName);
+  const logoUrl = business?.logo_url?.trim() ?? '';
+  const showLogo = !!logoUrl && !logoFailed;
+
+  React.useEffect(() => {
+    setLogoFailed(false);
+  }, [logoUrl]);
 
   const DEFAULT_NAV_ITEMS = [
     { label: 'Dashboard', icon: 'grid-outline',       route: 'Dashboard' },
@@ -101,7 +108,16 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
-          <Text style={styles.logoText}>{bInitials}</Text>
+          {showLogo ? (
+            <Image
+              source={{ uri: logoUrl }}
+              style={styles.logoImage}
+              resizeMode="cover"
+              onError={() => setLogoFailed(true)}
+            />
+          ) : (
+            <Text style={styles.logoText}>{bInitials}</Text>
+          )}
         </LinearGradient>
         {!collapsed && (
           <View style={{ flex: 1 }}>
@@ -196,6 +212,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: FONTS.sizes.base,
     letterSpacing: 0.5,
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: RADIUS.md,
   },
   logoName: {
     color: COLORS.white,

@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
+import type { NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { CartProvider } from '../context/CartContext';
 import { SettingsProvider } from '../context/SettingsContext';
@@ -20,6 +21,14 @@ import { MainLayout } from '../screens/MainLayout';
 import { AdminLayout } from '../screens/admin/AdminLayout';
 
 const Stack = createNativeStackNavigator();
+
+const stackScreenOptions: NativeStackNavigationOptions = {
+  headerShown: false,
+  gestureEnabled: true,
+  // iOS benefits from full-screen back swipe + gesture-driven animation.
+  fullScreenGestureEnabled: Platform.OS === 'ios',
+  animation: Platform.OS === 'ios' ? 'default' : 'slide_from_right',
+};
 
 // ─── Shown when the user has a business but payment is still pending ─────────
 function PaymentPendingScreen() {
@@ -90,7 +99,7 @@ function RootNavigator() {
   // Not authenticated → Auth stack
   if (!session) {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator screenOptions={stackScreenOptions}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
@@ -105,7 +114,7 @@ function RootNavigator() {
   const isAdmin = user?.role === 'admin' || user?.email === 'admin@smartbiz.tz';
   if (isAdmin) {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator screenOptions={stackScreenOptions}>
         <Stack.Screen name="Admin" component={AdminLayout} />
       </Stack.Navigator>
     );
@@ -114,7 +123,7 @@ function RootNavigator() {
   // Authenticated but no business → Onboarding
   if (!business) {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator screenOptions={stackScreenOptions}>
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       </Stack.Navigator>
     );
@@ -123,7 +132,7 @@ function RootNavigator() {
   // Business exists but payment not yet confirmed → gate dashboard
   if (subscription?.status === 'pending') {
     return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator screenOptions={stackScreenOptions}>
         <Stack.Screen name="PaymentPending" component={PaymentPendingScreen} />
       </Stack.Navigator>
     );
@@ -131,7 +140,7 @@ function RootNavigator() {
 
   // Fully ready → Main app
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen name="Main" component={MainLayout} />
     </Stack.Navigator>
   );

@@ -27,6 +27,14 @@ type TicketRow = {
   updated_at: string;
 };
 
+type ThreadMessageRow = {
+  id: string;
+  ticket_id: string;
+  sender_role: 'owner' | 'admin';
+  message: string;
+  created_at: string;
+};
+
 const STATUS_COLORS: Record<string, string> = {
   open: COLORS.info,
   in_progress: COLORS.warning,
@@ -51,6 +59,13 @@ export function SupportScreen() {
   const [body, setBody] = useState('');
   const [priority, setPriority] = useState<TicketRow['priority']>('normal');
 
+  const [activeTicket, setActiveTicket] = useState<TicketRow | null>(null);
+  const [thread, setThread] = useState<ThreadMessageRow[]>([]);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [threadSaving, setThreadSaving] = useState(false);
+  const [threadText, setThreadText] = useState('');
+  const [threadError, setThreadError] = useState<string | null>(null);
+
   const fetchTickets = useCallback(async (silent = false) => {
     if (!user?.id) {
       setLoading(false);
@@ -62,7 +77,7 @@ export function SupportScreen() {
       .from('support_tickets')
       .select('id, subject, body, status, priority, created_at, updated_at')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+      .order('updated_at', { ascending: false });
 
     if (error) {
       Alert.alert('Error', error.message);
@@ -75,11 +90,40 @@ export function SupportScreen() {
     setLoading(false);
   }, [user?.id]);
 
+  const fetchThread = useCallback(async (ticketId: string, silent = false) => {
+    if (!silent) setThreadLoading(true);
+    setThreadError(null);
+    const { data, error } = await supabase
+      .from('support_ticket_messages')
+      .select('id, ticket_id, sender_role, message, created_at')
+      .eq('ticket_id', ticketId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      setThread([]);
+      setThreadLoading(false);
+      setThreadError(error.message);
+      return;
+    }
+
+    setThread((data as ThreadMessageRow[]) ?? []);
+    setThreadLoading(false);
+  }, []);
+
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
 
   useRealtimeSubscription('owner-support-rt', 'support_tickets', () => fetchTickets(true), !!user?.id);
+  useRealtimeSubscription(
+    'owner-support-messages-rt',
+    'support_ticket_messages',
+    () => {
+      if (activeTicket?.id) fetchThread(activeTicket.id, true);
+      fetchTickets(true);
+    },
+    !!user?.id,
+  );
 
   const openCount = useMemo(() => tickets.filter((t) => t.status === 'open').length, [tickets]);
 
@@ -94,13 +138,33 @@ export function SupportScreen() {
     }
 
     setSaving(true);
-    const { error } = await supabase.from('support_tickets').insert({
-      user_id: user.id,
-      subject: subject.trim(),
-      body: body.trim(),
-      priority,
-      status: 'open',
-    });
+    const { data: createdTicket, error } = await supabase
+      .from('support_tickets')
+      .insert({
+        user_id: user.id,
+        subject: subject.trim(),
+        body: body.trim(),
+        priority,
+        status: 'open',
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (!error && createdTicket?.id) {
+      const { error: threadInsertError } = await supabase.from('support_ticket_messages').insert({
+        ticket_id: createdTicket.id,
+        sender_user_id: user.id,
+        sender_role: 'owner',
+        message: body.trim(),
+      });
+
+      if (threadInsertError) {
+        setSaving(false);
+        Alert.alert('Messaging Not Ready', `${threadInsertError.message}\n\nRun scripts/support-messaging-module.sql in Supabase SQL Editor.`);
+        return;
+      }
+    }
+
     setSaving(false);
 
     if (error) {
@@ -162,6 +226,44 @@ export function SupportScreen() {
     ]);
   };
 
+  const openThread = (ticket: TicketRow) => {
+    setActiveTicket(ticket);
+    setThreadText('');
+    fetchThread(ticket.id);
+  };
+
+  const handleSendThreadMessage = async () => {
+    if (!user?.id || !activeTicket || !threadText.trim()) return;
+
+    setThreadSaving(true);
+    const { error } = await supabase.from('support_ticket_messages').insert({
+      ticket_id: activeTicket.id,
+      sender_user_id: user.id,
+      sender_role: 'owner',
+      message: threadText.trim(),
+    });
+
+    if (!error && activeTicket.status === 'closed') {
+      await supabase
+        .from('support_tickets')
+        .update({ status: 'open' })
+        .eq('id', activeTicket.id)
+        .eq('user_id', user.id);
+      setActiveTicket({ ...activeTicket, status: 'open' });
+    }
+
+    setThreadSaving(false);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    setThreadText('');
+    fetchThread(activeTicket.id, true);
+    fetchTickets(true);
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.headerRow}>
@@ -201,6 +303,11 @@ export function SupportScreen() {
                 </View>
 
                 <View style={styles.actionsRow}>
+                  <TouchableOpacity style={styles.actionBtn} onPress={() => openThread(ticket)}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={14} color={COLORS.primary} />
+                    <Text style={[styles.actionText, { color: COLORS.primary }]}>Open Chat</Text>
+                  </TouchableOpacity>
+
                   {ticket.status !== 'closed' && (
                     <TouchableOpacity style={styles.actionBtn} onPress={() => handleCloseTicket(ticket)}>
                       <Ionicons name="checkmark-circle-outline" size={14} color={COLORS.success} />
@@ -269,6 +376,68 @@ export function SupportScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={!!activeTicket} transparent animationType="slide" onRequestClose={() => setActiveTicket(null)}>
+        <View style={styles.modalOverlayBottom}>
+          <View style={styles.threadModal}>
+            <View style={styles.modalHead}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Support Chat</Text>
+                <Text style={styles.threadSubTitle} numberOfLines={1}>{activeTicket?.subject}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setActiveTicket(null)}>
+                <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {threadLoading ? (
+              <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.lg }} />
+            ) : threadError ? (
+              <View style={styles.threadErrorBox}>
+                <Text style={styles.threadErrorTitle}>Thread unavailable</Text>
+                <Text style={styles.threadErrorText}>{threadError}</Text>
+                <Text style={styles.threadErrorText}>Run scripts/support-messaging-module.sql in Supabase SQL Editor.</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.threadList} contentContainerStyle={styles.threadListContent}>
+                {thread.length === 0 ? (
+                  <Text style={styles.emptyText}>No replies yet</Text>
+                ) : (
+                  thread.map((msg) => {
+                    const mine = msg.sender_role === 'owner';
+                    return (
+                      <View key={msg.id} style={[styles.msgBubble, mine ? styles.msgBubbleMine : styles.msgBubbleAdmin]}>
+                        <Text style={styles.msgLabel}>{mine ? 'You' : 'Admin'}</Text>
+                        <Text style={styles.msgText}>{msg.message}</Text>
+                        <Text style={styles.msgTime}>{format(new Date(msg.created_at), 'dd MMM · HH:mm')}</Text>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            )}
+
+            <View style={styles.threadInputRow}>
+              <TextInput
+                style={styles.threadInput}
+                placeholder="Write a reply to admin"
+                placeholderTextColor={COLORS.textMuted}
+                value={threadText}
+                onChangeText={setThreadText}
+                multiline
+                numberOfLines={3}
+              />
+              <TouchableOpacity
+                style={[styles.threadSendBtn, (!threadText.trim() || threadSaving || !!threadError) && { opacity: 0.5 }]}
+                onPress={handleSendThreadMessage}
+                disabled={!threadText.trim() || threadSaving || !!threadError}
+              >
+                {threadSaving ? <ActivityIndicator color={COLORS.white} size="small" /> : <Ionicons name="send" size={16} color={COLORS.white} />}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -285,7 +454,6 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
     backgroundColor: COLORS.surface,
   },
-  title: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text },
   subtitle: { marginTop: 2, fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
   addBtn: {
     flexDirection: 'row',
@@ -312,7 +480,7 @@ const styles = StyleSheet.create({
   badgeRow: { flexDirection: 'row', gap: SPACING.xs, marginTop: SPACING.sm },
   badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: RADIUS.full },
   badgeText: { fontSize: FONTS.sizes.xs, fontWeight: '700', textTransform: 'capitalize' },
-  actionsRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
+  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.sm },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   actionText: { fontSize: FONTS.sizes.xs, fontWeight: '600' },
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING['2xl'], gap: SPACING.sm },
@@ -324,6 +492,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: SPACING.base,
   },
+  modalOverlayBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
   modalCard: {
     width: '100%',
     maxWidth: 460,
@@ -333,8 +506,18 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     padding: SPACING.base,
   },
+  threadModal: {
+    height: '80%',
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    padding: SPACING.base,
+    borderTopWidth: 1,
+    borderColor: COLORS.border,
+  },
   modalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.sm },
   modalTitle: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text },
+  threadSubTitle: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 2 },
   input: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -379,4 +562,59 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
   },
   saveBtnText: { color: COLORS.white, fontWeight: '700' },
+  threadList: { flex: 1, marginBottom: SPACING.sm },
+  threadListContent: { gap: SPACING.sm, paddingBottom: SPACING.sm },
+  msgBubble: {
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    borderWidth: 1,
+    maxWidth: '88%',
+  },
+  msgBubbleMine: {
+    alignSelf: 'flex-end',
+    backgroundColor: COLORS.primary + '20',
+    borderColor: COLORS.primary + '55',
+  },
+  msgBubbleAdmin: {
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.surfaceAlt,
+    borderColor: COLORS.border,
+  },
+  msgLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '700', marginBottom: 3 },
+  msgText: { fontSize: FONTS.sizes.sm, color: COLORS.text },
+  msgTime: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 4 },
+  threadInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: SPACING.xs },
+  threadInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceAlt,
+    color: COLORS.text,
+    fontSize: FONTS.sizes.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 54,
+    maxHeight: 120,
+    textAlignVertical: 'top',
+  },
+  threadSendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  threadErrorBox: {
+    borderWidth: 1,
+    borderColor: COLORS.error + '55',
+    backgroundColor: COLORS.errorLight,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    marginBottom: SPACING.sm,
+    gap: 4,
+  },
+  threadErrorTitle: { fontSize: FONTS.sizes.sm, color: COLORS.error, fontWeight: '700' },
+  threadErrorText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
 });

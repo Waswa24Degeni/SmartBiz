@@ -84,13 +84,33 @@ export function MessagesScreen() {
     }
 
     setSaving(true);
-    const { error } = await supabase.from('notifications').insert({
-      user_id: user.id,
-      title: composeTitle.trim(),
-      body: composeBody.trim(),
-      type: 'system',
-      is_read: false,
-    });
+    const { data: createdTicket, error } = await supabase
+      .from('support_tickets')
+      .insert({
+        user_id: user.id,
+        subject: composeTitle.trim(),
+        body: composeBody.trim(),
+        priority: 'normal',
+        status: 'open',
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (!error && createdTicket?.id) {
+      const { error: threadError } = await supabase.from('support_ticket_messages').insert({
+        ticket_id: createdTicket.id,
+        sender_user_id: user.id,
+        sender_role: 'owner',
+        message: composeBody.trim(),
+      });
+
+      if (threadError) {
+        setSaving(false);
+        Alert.alert('Messaging Not Ready', `${threadError.message}\n\nRun scripts/support-messaging-module.sql in Supabase SQL Editor.`);
+        return;
+      }
+    }
+
     setSaving(false);
 
     if (error) {
@@ -101,6 +121,7 @@ export function MessagesScreen() {
     setComposeVisible(false);
     setComposeTitle('');
     setComposeBody('');
+    Alert.alert('Sent', 'Your message has been sent to admin support.');
     fetchItems();
   };
 
@@ -149,7 +170,7 @@ export function MessagesScreen() {
         <Text style={styles.subtitle}>{items.length} total · {unreadCount} unread</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => setComposeVisible(true)}>
           <Ionicons name="add" size={14} color={COLORS.white} />
-          <Text style={styles.addBtnText}>New Message</Text>
+          <Text style={styles.addBtnText}>Message Admin</Text>
         </TouchableOpacity>
       </View>
 
@@ -196,7 +217,7 @@ export function MessagesScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHead}>
-              <Text style={styles.modalTitle}>Create Message</Text>
+              <Text style={styles.modalTitle}>New Message to Admin</Text>
               <TouchableOpacity onPress={() => setComposeVisible(false)}>
                 <Ionicons name="close" size={20} color={COLORS.textSecondary} />
               </TouchableOpacity>
@@ -204,14 +225,14 @@ export function MessagesScreen() {
 
             <TextInput
               style={styles.input}
-              placeholder="Title"
+              placeholder="Subject"
               placeholderTextColor={COLORS.textMuted}
               value={composeTitle}
               onChangeText={setComposeTitle}
             />
             <TextInput
               style={[styles.input, styles.textArea]}
-              placeholder="Message body"
+              placeholder="Describe your issue or request"
               placeholderTextColor={COLORS.textMuted}
               value={composeBody}
               onChangeText={setComposeBody}
@@ -224,7 +245,7 @@ export function MessagesScreen() {
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.7 }]} onPress={handleCreate} disabled={saving}>
-                {saving ? <ActivityIndicator color={COLORS.white} size="small" /> : <Text style={styles.saveBtnText}>Save</Text>}
+                {saving ? <ActivityIndicator color={COLORS.white} size="small" /> : <Text style={styles.saveBtnText}>Send</Text>}
               </TouchableOpacity>
             </View>
           </View>

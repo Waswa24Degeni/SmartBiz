@@ -384,32 +384,35 @@ export function ReportsScreen() {
     return dest;
   };
 
+  const triggerWebDownloadFromUri = async (uri: string, fileName: string) => {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const savePdfToDevice = async () => {
     if (Platform.OS === 'web') {
       const html = reportType === 'sales' ? buildSalesReportPdf() : buildAdvancedReportPdf();
-      await Print.printAsync({ html });
+      const fileName = `smartbiz-${reportType}-report-${period}-${Date.now()}.pdf`;
+      try {
+        const printed = await Print.printToFileAsync({ html });
+        await triggerWebDownloadFromUri(printed.uri, fileName);
+      } catch {
+        // Fallback if PDF file generation is not supported by the browser runtime.
+        await Print.printAsync({ html });
+      }
       return;
     }
 
     const html = reportType === 'sales' ? buildSalesReportPdf() : buildAdvancedReportPdf();
     const localPdf = await renderPdfToAppStorage(html);
-
-    if (Platform.OS === 'android') {
-      const permission = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
-      if (permission.granted) {
-        const fileName = `smartbiz-${reportType}-report-${period}-${Date.now()}.pdf`;
-        const base64 = await FileSystem.readAsStringAsync(localPdf, { encoding: FileSystem.EncodingType.Base64 });
-        const targetUri = await FileSystem.StorageAccessFramework.createFileAsync(
-          permission.directoryUri,
-          fileName,
-          'application/pdf',
-        );
-        await FileSystem.writeAsStringAsync(targetUri, base64, { encoding: FileSystem.EncodingType.Base64 });
-        Alert.alert('Saved', 'PDF saved to selected folder.');
-        return;
-      }
-    }
-
     Alert.alert('Saved', `PDF saved to app storage:\n${localPdf}`);
   };
 
@@ -455,15 +458,6 @@ export function ReportsScreen() {
     if (!baseDir) throw new Error('Cannot access local storage on this device.');
     const dest = `${baseDir}${fileName}`;
     await FileSystem.writeAsStringAsync(dest, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
-
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(dest, {
-        dialogTitle: `Share ${reportType} report Excel (CSV)`,
-        mimeType: 'text/csv',
-      });
-      return;
-    }
-
     Alert.alert('Saved', `CSV saved to app storage:\n${dest}`);
   };
 

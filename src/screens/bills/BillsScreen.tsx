@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -87,6 +87,7 @@ export function BillsScreen() {
   const [addItemVisible, setAddItemVisible] = useState(false);
   const [chargeSale, setChargeSale] = useState<Sale | null>(null);
   const [reconciling, setReconciling] = useState(false);
+  const reconcilingRef = useRef(false);
 
   const [tableNumber, setTableNumber] = useState('');
   const [guests, setGuests] = useState('1');
@@ -159,7 +160,8 @@ export function BillsScreen() {
 
   // Sync historical/late-updated payment records to sales so Bills UI stays correct.
   const reconcilePaidSales = useCallback(async () => {
-    if (!business?.id || reconciling) return;
+    if (!business?.id || reconcilingRef.current) return;
+    reconcilingRef.current = true;
     setReconciling(true);
     try {
       // 1) If a sale is already paid, ensure status is completed.
@@ -193,17 +195,20 @@ export function BillsScreen() {
             updated_at: new Date().toISOString(),
           })
           .eq('business_id', business.id)
-          .in('id', orderIds);
+          .in('id', orderIds)
+          .or('status.neq.completed,payment_status.neq.paid');
       }
     } catch (e) {
       console.warn('[BillsScreen] reconcilePaidSales failed:', e);
     } finally {
+      reconcilingRef.current = false;
       setReconciling(false);
     }
-  }, [business?.id, reconciling]);
+  }, [business?.id]);
 
   useEffect(() => {
-    reconcilePaidSales().finally(() => fetchSales());
+    // Silent fetch keeps the Bills screen from flashing loading every time user navigates here.
+    reconcilePaidSales().finally(() => fetchSales(true));
     fetchProducts();
   }, [fetchSales, fetchProducts, reconcilePaidSales]);
 

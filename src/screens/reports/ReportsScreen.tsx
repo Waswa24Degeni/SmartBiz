@@ -7,7 +7,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeSubscription } from '../../lib/hooks';
-import { COLORS, SPACING, FONTS, RADIUS } from '../../lib/constants';
+import { COLORS, SPACING, FONTS, RADIUS, SHADOWS } from '../../lib/constants';
 import { format } from 'date-fns';
 
 type SaleRow = {
@@ -41,6 +41,11 @@ const STATUS_COLORS: Record<string, string> = {
   processing: COLORS.info,
   failed:    COLORS.error,
   expired:   COLORS.textMuted,
+};
+
+const getStatusPillStyle = (status: string) => {
+  const color = STATUS_COLORS[status] ?? COLORS.textMuted;
+  return { backgroundColor: color + '20', borderWidth: 1, borderColor: color + '40' };
 };
 
 export function ReportsScreen() {
@@ -346,64 +351,107 @@ export function ReportsScreen() {
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Header Section */}
+      <View style={styles.headerSection}>
+        <View>
+          <Text style={styles.screenTitle}>Reports</Text>
+          <Text style={styles.screenSubtitle}>Track your business performance</Text>
+        </View>
+      </View>
+
+      {/* Controls Section */}
       <View style={[styles.topRow, isMobile && styles.topRowMobile]}>
         <View style={styles.periodRow}>
           {([
-            { key: 'day' as const, label: 'Day' },
-            { key: 'week' as const, label: 'Week' },
-            { key: 'month' as const, label: 'Month' },
+            { key: 'day' as const, label: 'Day', icon: 'today-outline' },
+            { key: 'week' as const, label: 'Week', icon: 'calendar-outline' },
+            { key: 'month' as const, label: 'Month', icon: 'calendar-outline' },
           ] as const).map((p) => (
-            <TouchableOpacity key={p.key} style={[styles.periodBtn, period === p.key && styles.periodBtnActive]} onPress={() => setPeriod(p.key)}>
+            <TouchableOpacity 
+              key={p.key} 
+              style={[styles.periodBtn, period === p.key && styles.periodBtnActive]} 
+              onPress={() => setPeriod(p.key)}
+              activeOpacity={0.7}
+            >
+              {period === p.key && <View style={styles.periodBtnIndicator} />}
               <Text style={[styles.periodText, period === p.key && styles.periodTextActive]}>{p.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
         <View style={styles.exportBtnsRow}>
-          <TouchableOpacity style={[styles.exportBtn, exporting && { opacity: 0.7 }]} onPress={handleDownloadPdf} disabled={exporting}>
+          <TouchableOpacity 
+            style={[styles.exportBtn, exporting && { opacity: 0.6 }]} 
+            onPress={handleDownloadPdf} 
+            disabled={exporting}
+            activeOpacity={0.85}
+          >
             {exporting ? (
               <ActivityIndicator color={COLORS.white} size="small" />
             ) : (
               <>
-                <Ionicons name="download-outline" size={15} color={COLORS.white} />
-                <Text style={styles.exportBtnText}>Save PDF</Text>
+                <Ionicons name="download-outline" size={16} color={COLORS.white} />
+                <Text style={styles.exportBtnText}>Save</Text>
               </>
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.shareBtn, exporting && { opacity: 0.7 }]} onPress={handleSharePdf} disabled={exporting}>
-            <Ionicons name="share-social-outline" size={15} color={COLORS.primary} />
+          <TouchableOpacity 
+            style={[styles.shareBtn, exporting && { opacity: 0.6 }]} 
+            onPress={handleSharePdf} 
+            disabled={exporting}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="share-social-outline" size={16} color={COLORS.primary} />
             <Text style={styles.shareBtnText}>Share</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+          <Text style={styles.loadingText}>Loading reports...</Text>
+        </View>
       ) : (
         <>
+          {/* Summary Cards Grid */}
           <View style={styles.summaryGrid}>
-            {summaryCards.map((card) => (
-              <View key={card.key} style={styles.summaryCard}>
-                <Ionicons name={card.icon as any} size={18} color={card.color} />
-                <Text style={styles.summaryValue}>{card.value}</Text>
+            {summaryCards.map((card, idx) => (
+              <View key={card.key} style={[styles.summaryCard, isMobile && idx > 1 && styles.summaryCardMobile]}>
+                <View style={[styles.summaryIconBg, { backgroundColor: card.color + '15' }]}>
+                  <Ionicons name={card.icon as any} size={20} color={card.color} />
+                </View>
                 <Text style={styles.summaryLabel}>{card.label}</Text>
+                <Text style={styles.summaryValue} numberOfLines={1}>{card.value}</Text>
               </View>
             ))}
           </View>
 
+          {/* Top Products Section */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Top Products</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.cardHeader}>
+              <Ionicons name="star-outline" size={18} color={COLORS.accent} />
+              <Text style={styles.cardTitle}>Top Products</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableScroll}>
               <View style={{ minWidth: isMobile ? 520 : 0, flex: 1 }}>
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Product</Text>
+                  <Text style={[styles.tableHeaderCell, { flex: 1, textAlign: 'center' }]}>Qty</Text>
+                  <Text style={[styles.tableHeaderCell, { flex: 1.2, textAlign: 'right' }]}>Revenue</Text>
+                </View>
                 {topItems.length === 0 ? (
-                  <Text style={styles.emptyText}>No product sales in this period</Text>
+                  <View style={styles.emptyStateContainer}>
+                    <Ionicons name="cube-outline" size={32} color={COLORS.textMuted} />
+                    <Text style={styles.emptyText}>No product sales in this period</Text>
+                  </View>
                 ) : (
-                  topItems.map((item) => (
-                    <View key={item.product_name} style={styles.row}>
-                      <Text style={[styles.cell, { flex: 2 }]} numberOfLines={1}>{item.product_name}</Text>
-                      <Text style={[styles.cell, { flex: 1 }]}>Qty {item.qty}</Text>
-                      <Text style={[styles.cell, { flex: 1, textAlign: 'right' }]}>TZS {item.revenue.toLocaleString()}</Text>
+                  topItems.map((item, idx) => (
+                    <View key={item.product_name} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
+                      <Text style={[styles.tableCell, { flex: 2 }]} numberOfLines={1}>{item.product_name}</Text>
+                      <Text style={[styles.tableCell, { flex: 1, textAlign: 'center', fontWeight: '600' }]}>{item.qty}</Text>
+                      <Text style={[styles.tableCell, { flex: 1.2, textAlign: 'right', fontWeight: '600', color: COLORS.success }]}>TZS {item.revenue.toLocaleString()}</Text>
                     </View>
                   ))
                 )}
@@ -411,19 +459,36 @@ export function ReportsScreen() {
             </ScrollView>
           </View>
 
+          {/* Recent Orders Section */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Recent Orders</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.cardHeader}>
+              <Ionicons name="receipt-outline" size={18} color={COLORS.info} />
+              <Text style={styles.cardTitle}>Recent Orders</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableScroll}>
               <View style={{ minWidth: isMobile ? 560 : 0, flex: 1 }}>
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.tableHeaderCell, { flex: 1.4 }]}>Order #</Text>
+                  <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Status</Text>
+                  <Text style={[styles.tableHeaderCell, { flex: 1.2 }]}>Date</Text>
+                  <Text style={[styles.tableHeaderCell, { flex: 1.2, textAlign: 'right' }]}>Total</Text>
+                </View>
                 {sales.length === 0 ? (
-                  <Text style={styles.emptyText}>No orders in this period</Text>
+                  <View style={styles.emptyStateContainer}>
+                    <Ionicons name="receipt-outline" size={32} color={COLORS.textMuted} />
+                    <Text style={styles.emptyText}>No orders in this period</Text>
+                  </View>
                 ) : (
-                  sales.slice(0, 20).map((s) => (
-                    <View key={s.id} style={styles.row}>
-                      <Text style={[styles.cell, { flex: 1.4 }]} numberOfLines={1}>{s.order_number}</Text>
-                      <Text style={[styles.cell, { flex: 1 }]}>{s.status}</Text>
-                      <Text style={[styles.cell, { flex: 1.2 }]}>{format(new Date(s.created_at), 'dd MMM')}</Text>
-                      <Text style={[styles.cell, { flex: 1.2, textAlign: 'right' }]}>TZS {Number(s.total).toLocaleString()}</Text>
+                  sales.slice(0, 20).map((s, idx) => (
+                    <View key={s.id} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
+                      <Text style={[styles.tableCell, { flex: 1.4 }]} numberOfLines={1}>{s.order_number}</Text>
+                      <View style={{ flex: 1, alignItems: 'flex-start' }}>
+                        <View style={[styles.statusPill, getStatusPillStyle(s.status)]}>
+                          <Text style={styles.statusPillText}>{s.status}</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.tableCell, { flex: 1.2 }]}>{format(new Date(s.created_at), 'dd MMM')}</Text>
+                      <Text style={[styles.tableCell, { flex: 1.2, textAlign: 'right', fontWeight: '600', color: COLORS.success }]}>TZS {Number(s.total).toLocaleString()}</Text>
                     </View>
                   ))
                 )}
@@ -431,33 +496,40 @@ export function ReportsScreen() {
             </ScrollView>
           </View>
 
+          {/* Payment Transactions Section */}
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Payment Transactions</Text>
+            <View style={styles.cardHeader}>
+              <Ionicons name="card-outline" size={18} color={COLORS.accent} />
+              <Text style={styles.cardTitle}>Payment Transactions</Text>
+            </View>
             {payments.length === 0 ? (
-              <Text style={styles.emptyText}>No payment transactions found</Text>
+              <View style={styles.emptyStateContainer}>
+                <Ionicons name="card-outline" size={32} color={COLORS.textMuted} />
+                <Text style={styles.emptyText}>No payment transactions found</Text>
+              </View>
             ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableScroll}>
                 <View style={{ minWidth: isMobile ? 620 : 0, flex: 1 }}>
-                  <View style={[styles.row, styles.payHeadRow]}>
-                    <Text style={[styles.payHeadCell, { flex: 0.9 }]}>Type</Text>
-                    <Text style={[styles.payHeadCell, { flex: 0.8 }]}>Plan</Text>
-                    <Text style={[styles.payHeadCell, { flex: 1.2, textAlign: 'right' }]}>Amount</Text>
-                    <Text style={[styles.payHeadCell, { flex: 1 }]}>Phone</Text>
-                    <Text style={[styles.payHeadCell, { flex: 0.8 }]}>Status</Text>
-                    <Text style={[styles.payHeadCell, { flex: 1.1 }]}>Date</Text>
+                  <View style={[styles.tableHeaderRow, styles.paymentHeaderRow]}>
+                    <Text style={[styles.tableHeaderCell, { flex: 0.9 }]}>Type</Text>
+                    <Text style={[styles.tableHeaderCell, { flex: 0.8 }]}>Plan</Text>
+                    <Text style={[styles.tableHeaderCell, { flex: 1.2, textAlign: 'right' }]}>Amount</Text>
+                    <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Phone</Text>
+                    <Text style={[styles.tableHeaderCell, { flex: 0.8 }]}>Status</Text>
+                    <Text style={[styles.tableHeaderCell, { flex: 1.1 }]}>Date</Text>
                   </View>
                   {payments.map((p, idx) => (
-                    <View key={p.id} style={[styles.row, idx % 2 === 1 && styles.rowAlt]}>
-                      <Text style={[styles.cell, { flex: 0.9 }]} numberOfLines={1}>{p.payment_type}</Text>
-                      <Text style={[styles.cell, { flex: 0.8 }]} numberOfLines={1}>{p.metadata?.plan ?? '—'}</Text>
-                      <Text style={[styles.cell, { flex: 1.2, textAlign: 'right' }]}>TZS {Number(p.amount).toLocaleString()}</Text>
-                      <Text style={[styles.cell, { flex: 1 }]} numberOfLines={1}>{p.payer_phone ?? '—'}</Text>
+                    <View key={p.id} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
+                      <Text style={[styles.tableCell, { flex: 0.9 }]} numberOfLines={1}>{p.payment_type}</Text>
+                      <Text style={[styles.tableCell, { flex: 0.8 }]} numberOfLines={1}>{p.metadata?.plan ?? '—'}</Text>
+                      <Text style={[styles.tableCell, { flex: 1.2, textAlign: 'right', fontWeight: '600', color: COLORS.success }]}>TZS {Number(p.amount).toLocaleString()}</Text>
+                      <Text style={[styles.tableCell, { flex: 1 }]} numberOfLines={1}>{p.payer_phone ?? '—'}</Text>
                       <View style={{ flex: 0.8, alignItems: 'flex-start' }}>
                         <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[p.status] ?? COLORS.textMuted }]}>
                           <Text style={styles.statusBadgeText}>{p.status}</Text>
                         </View>
                       </View>
-                      <Text style={[styles.cell, { flex: 1.1 }]}>{format(new Date(p.initiated_at), 'dd MMM yyyy')}</Text>
+                      <Text style={[styles.tableCell, { flex: 1.1 }]}>{format(new Date(p.initiated_at), 'dd MMM')}</Text>
                     </View>
                   ))}
                 </View>
@@ -472,22 +544,35 @@ export function ReportsScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
-  container: { padding: SPACING.base, gap: SPACING.base },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  topRowMobile: { alignItems: 'flex-start', flexDirection: 'column', gap: SPACING.sm },
-  title: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text },
-  periodRow: { flexDirection: 'row', gap: SPACING.xs },
+  container: { padding: SPACING.base, gap: SPACING.lg },
+  
+  /* Header Section */
+  headerSection: { marginBottom: SPACING.sm },
+  screenTitle: { fontSize: FONTS.sizes.xl, fontWeight: '800', color: COLORS.text, letterSpacing: -0.3 },
+  screenSubtitle: { fontSize: FONTS.sizes.sm, color: COLORS.textMuted, marginTop: 4 },
+
+  /* Loading State */
+  loadingContainer: { justifyContent: 'center', alignItems: 'center', paddingVertical: SPACING['2xl'], gap: SPACING.md },
+  loadingText: { fontSize: FONTS.sizes.sm, color: COLORS.textMuted, marginTop: SPACING.sm },
+
+  /* Controls */
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.md },
+  topRowMobile: { alignItems: 'flex-start', flexDirection: 'column', gap: SPACING.md },
+  
+  periodRow: { flexDirection: 'row', gap: SPACING.xs, backgroundColor: COLORS.surface, padding: 4, borderRadius: RADIUS.full },
   periodBtn: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
+    backgroundColor: 'transparent',
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 1,
+    position: 'relative',
   },
-  periodBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  periodBtnActive: { backgroundColor: COLORS.primary },
+  periodBtnIndicator: { position: 'absolute', bottom: 3, left: SPACING.xs + 2, right: SPACING.xs + 2, height: 2, borderRadius: 1 },
   periodText: { color: COLORS.textSecondary, fontSize: FONTS.sizes.xs, fontWeight: '600' },
-  periodTextActive: { color: COLORS.white },
+  periodTextActive: { color: COLORS.white, fontWeight: '700' },
+  
+  exportBtnsRow: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'center' },
   exportBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -495,20 +580,11 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs + 1,
-    minWidth: 76,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    minWidth: 80,
   },
-  exportBtnsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  exportBtnText: {
-    color: COLORS.white,
-    fontSize: FONTS.sizes.xs,
-    fontWeight: '700',
-  },
+  exportBtnText: { color: COLORS.white, fontSize: FONTS.sizes.xs, fontWeight: '700', letterSpacing: 0.3 },
   shareBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -516,53 +592,89 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs + 1,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary + '40',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    minWidth: 80,
   },
-  shareBtnText: {
-    color: COLORS.primary,
-    fontSize: FONTS.sizes.xs,
-    fontWeight: '700',
-  },
+  shareBtnText: { color: COLORS.primary, fontSize: FONTS.sizes.xs, fontWeight: '700', letterSpacing: 0.3 },
+
+  /* Summary Cards */
   summaryGrid: { flexDirection: 'row', gap: SPACING.sm, flexWrap: 'wrap' },
   summaryCard: {
     flex: 1,
-    minWidth: 120,
+    minWidth: 140,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     backgroundColor: COLORS.surface,
-    padding: SPACING.sm,
-    gap: 3,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+    ...SHADOWS.sm,
   },
-  summaryValue: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text },
-  summaryLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
+  summaryCardMobile: { minWidth: '48%' },
+  summaryIconBg: { width: 44, height: 44, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center' },
+  summaryValue: { fontSize: FONTS.sizes.base, fontWeight: '800', color: COLORS.text, letterSpacing: -0.2 },
+  summaryLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '500' },
+
+  /* Cards */
   card: {
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     backgroundColor: COLORS.surface,
-    padding: SPACING.sm,
+    padding: SPACING.md,
+    ...SHADOWS.sm,
   },
-  cardTitle: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.xs },
-  row: {
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.md },
+  cardTitle: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text, flex: 1 },
+
+  /* Table Styles */
+  tableScroll: { marginHorizontal: -SPACING.md },
+  tableHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: SPACING.xs,
-    borderBottomWidth: 1,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.background,
+    borderBottomWidth: 1.5,
     borderBottomColor: COLORS.border,
+    gap: SPACING.xs,
   },
-  cell: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
-  emptyText: { color: COLORS.textMuted, textAlign: 'center', paddingVertical: SPACING.md, fontSize: FONTS.sizes.sm },
-  payHeadRow: { backgroundColor: COLORS.background },
-  payHeadCell: { fontSize: FONTS.sizes.xs, fontWeight: '700', color: COLORS.text },
-  rowAlt: { backgroundColor: COLORS.background + '80' },
+  paymentHeaderRow: { paddingHorizontal: SPACING.md },
+  tableHeaderCell: { fontSize: FONTS.sizes.xs, fontWeight: '700', color: COLORS.text, textTransform: 'uppercase', letterSpacing: 0.5 },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm + 2,
+    paddingHorizontal: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border + '40',
+    gap: SPACING.xs,
+  },
+  tableRowAlt: { backgroundColor: COLORS.background + '50' },
+  tableCell: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
+
+  /* Empty State */
+  emptyStateContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xl, gap: SPACING.sm },
+  emptyText: { color: COLORS.textMuted, textAlign: 'center', fontSize: FONTS.sizes.sm, fontWeight: '500' },
+
+  /* Status Pills */
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusPillText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize', color: COLORS.text },
+  
+  /* Status Badge */
   statusBadge: {
     borderRadius: RADIUS.full,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
-  statusBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.white, textTransform: 'capitalize' },
+  statusBadgeText: { fontSize: 10, fontWeight: '700', color: COLORS.white, textTransform: 'capitalize' },
 });

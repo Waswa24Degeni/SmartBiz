@@ -121,9 +121,19 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
 
     try {
       setImporting(true);
-      const content = await FileSystem.readAsStringAsync(file.uri, {
-        encoding: isCsv ? FileSystem.EncodingType.UTF8 : FileSystem.EncodingType.Base64,
-      });
+      let content: string | ArrayBuffer;
+
+      if (Platform.OS === 'web') {
+        const response = await fetch(file.uri);
+        if (!response.ok) {
+          throw new Error('Unable to read the selected file.');
+        }
+        content = isCsv ? await response.text() : await response.arrayBuffer();
+      } else {
+        content = await FileSystem.readAsStringAsync(file.uri, {
+          encoding: isCsv ? FileSystem.EncodingType.UTF8 : FileSystem.EncodingType.Base64,
+        });
+      }
 
       const parsedRows = parseSpreadsheet(content, fileName, isCsv);
       if (!parsedRows.length) {

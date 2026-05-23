@@ -114,12 +114,14 @@ function parseCsv(text: string): ImportedProductRow[] {
   return parsed;
 }
 
-export function parseSpreadsheet(base64OrText: string, fileName: string, isCsvText = false): ImportedProductRow[] {
+export function parseSpreadsheet(input: string | ArrayBuffer, fileName: string, isCsvText = false): ImportedProductRow[] {
   if (isCsvText || fileName.toLowerCase().endsWith('.csv')) {
-    return parseCsv(base64OrText);
+    return parseCsv(typeof input === 'string' ? input : new TextDecoder().decode(input));
   }
 
-  const workbook = XLSX.read(base64OrText, { type: 'base64' });
+  const workbook = typeof input === 'string'
+    ? XLSX.read(input, { type: 'base64' })
+    : XLSX.read(input, { type: 'array' });
   const firstSheetName = workbook.SheetNames[0];
   if (!firstSheetName) return [];
 

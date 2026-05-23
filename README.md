@@ -1,19 +1,61 @@
-# SmartBiz TZ 🏪
+# SmartBiz TZ
 
-**SmartBiz** is a full mobile-first business management platform for SMEs in Tanzania and East Africa. Built with React Native (Expo) + Supabase.
+SmartBiz is a mobile-first business operating system for small and medium businesses in Tanzania and East Africa.
 
-## Screenshots
-The UI matches the ServePoint design system — dark green sidebar (#1B3A2D), gold/amber accent (#C49A2A), clean card layouts.
+It helps owners run daily operations across POS, inventory, billing, invoicing, reporting, staff, wallet tracking, internal messaging, and owner-admin support from one application.
 
-### Screens implemented:
-- **Login / Register / Forgot Password**
-- **Onboarding** (Business setup, Category, Currency, Plan selection)
-- **Dashboard** — Live sales stats, line chart, revenue donut, employee ranking, trending dishes
-- **Food & Drinks** — Categories grid → Product grid → Product detail with Add to Order
-- **Bills** — Order list with status badges + order detail panel with charge button
-- **Settings** — Profile, Notifications, Appearance, Checkout Settings, Security, Language & Region
+## Why This Matters in Tanzania and East Africa
 
----
+Many businesses in the region still struggle with:
+
+- fragmented tools (paper, WhatsApp, spreadsheets, separate payment apps)
+- limited visibility on daily profit and cash movement
+- mixed payment channels (cash + mobile money + card) without unified records
+- weak internal controls when multiple staff share POS workflows
+- customer and supplier tracking gaps that cause leakage and disputes
+- support delays when business owners need direct platform help
+
+SmartBiz addresses these issues with a single system built for local realities:
+
+- fast mobile workflows for shop, restaurant, and service businesses
+- role-based access for owner, staff, and admin operations
+- sales and payment tracking in TZS-ready business flows
+- printable reports and downloadable Excel-compatible exports
+- owner-admin support channel separate from internal staff messaging
+
+## What SmartBiz Does Today
+
+### Core Business Modules
+
+- authentication and onboarding
+- dashboard with business KPIs
+- product and category management
+- POS and cart-based checkout
+- bills and customer records
+- staff management and permissions
+- settings and business profile customization
+- wallet and payment tracking
+
+### Reporting and Documents
+
+- sales report with detailed line-level profitability:
+	- product name
+	- cost price
+	- cashier
+	- selling price
+	- quantity
+	- total amount
+	- net profit
+- advanced report view for additional operational insight
+- print-ready full report pages on desktop and mobile
+- Excel-compatible CSV export
+- invoicing lifecycle support (proforma, invoice, receipt)
+
+### Communication Flows
+
+- messages section for internal team communication (owner, manager, staff)
+- support section for owner-admin communication
+- threaded support conversations and notifications
 
 ## Tech Stack
 
@@ -21,151 +63,121 @@ The UI matches the ServePoint design system — dark green sidebar (#1B3A2D), go
 |---|---|
 | Frontend | React Native + Expo SDK 54 |
 | Backend/BaaS | Supabase |
-| Database | PostgreSQL (via Supabase) |
+| Database | PostgreSQL (Supabase) |
 | Auth | Supabase Auth |
 | Navigation | React Navigation v7 |
-| Charts | Native RN components |
-| State | React Context (Auth + Cart) |
+| State | React Context |
 | Language | TypeScript |
 
----
-
-## Getting Started
+## Quick Start
 
 ### 1. Install dependencies
+
 ```bash
 npm install
 ```
 
-### 2. Set up Supabase
-1. Go to [supabase.com](https://supabase.com) and create a project
-2. In SQL editor, run the contents of `supabase_schema.sql`
-3. Copy your **Project URL** and **anon public key** from Project Settings → API
+### 2. Configure environment
 
-### 3. Configure environment
-Create `.env` in the project root:
-```
+Create a .env file in project root:
+
+```env
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-### 4. Start the app
+### 3. Set up database
+
+In Supabase SQL Editor, run:
+
+1. supabase_schema.sql
+2. scripts/invoicing-system.sql
+3. scripts/support-messaging-module.sql
+4. any additional script in scripts/ needed for your deployment
+
+### 4. Run the app
+
 ```bash
-# Start development server
-npx expo start
-
-# Android
-npx expo start --android
-
-# iOS
-npx expo start --ios
+npm run start
 ```
 
----
+Optional targets:
 
-## Project Structure
-
+```bash
+npm run android
+npm run ios
+npm run web
 ```
+
+## Current Project Structure
+
+```text
 smartbiz-tz/
-├── src/
-│   ├── lib/
-│   │   ├── supabase.ts          # Supabase client
-│   │   └── constants.ts         # Design tokens (colors, fonts, spacing)
-│   ├── types/
-│   │   └── index.ts             # All TypeScript types
-│   ├── context/
-│   │   ├── AuthContext.tsx      # Auth state + Supabase auth
-│   │   └── CartContext.tsx      # POS cart state
-│   ├── navigation/
-│   │   └── AppNavigator.tsx     # Root navigator (auth → onboarding → main)
-│   ├── components/
-│   │   └── common/
-│   │       ├── Button.tsx
-│   │       ├── Card.tsx
-│   │       ├── Header.tsx
-│   │       ├── Input.tsx
-│   │       ├── Sidebar.tsx
-│   │       └── Toggle.tsx
-│   └── screens/
-│       ├── MainLayout.tsx        # Sidebar + content layout
-│       ├── auth/
-│       │   ├── LoginScreen.tsx
-│       │   ├── RegisterScreen.tsx
-│       │   └── ForgotPasswordScreen.tsx
-│       ├── onboarding/
-│       │   └── OnboardingScreen.tsx
-│       ├── dashboard/
-│       │   └── DashboardScreen.tsx
-│       ├── products/
-│       │   ├── CategoriesScreen.tsx
-│       │   └── CategoryItemsScreen.tsx
-│       ├── bills/
-│       │   └── BillsScreen.tsx
-│       └── settings/
-│           └── SettingsScreen.tsx
-├── supabase_schema.sql           # Full DB schema with RLS
-├── App.tsx
-├── app.json
-└── babel.config.js
+	src/
+		components/
+		context/
+		lib/
+		navigation/
+		screens/
+			admin/
+			auth/
+			bills/
+			customers/
+			dashboard/
+			invoices/
+			messages/
+			onboarding/
+			pos/
+			products/
+			reports/
+			settings/
+			staff/
+			support/
+			wallet/
+	scripts/
+		invoicing-system.sql
+		support-messaging-module.sql
+		wallet-module.sql
+		payment-module.sql
+		setup-staff-module.sql
+	supabase_schema.sql
 ```
 
----
+## Roles and Access
 
-## Database Schema
-
-14 tables with full Row Level Security (RLS):
-- `users` — Extended auth profile with role
-- `businesses` — Business profiles
-- `subscriptions` — Plan management
-- `categories` — Product categories
-- `products` — Inventory with stock tracking
-- `customers` — Customer profiles + credit
-- `sales` — Orders with table/guest info
-- `sale_items` — Line items per order
-- `inventory_logs` — Stock change audit trail
-- `staff` — Staff with permissions
-- `notifications` — Push/email notifications
-- `settings` — Per-business settings
-- `activity_logs` — Audit trails
-- `support_tickets` — Support system
-
----
-
-## User Roles
-
-| Role | Access |
+| Role | Typical Access |
 |---|---|
-| **Owner** | Full access: products, sales, staff, reports, settings |
-| **Staff/Cashier** | POS, limited dashboard |
-| **Admin** | Platform-wide: users, businesses, revenue, subscriptions |
+| Owner | Full business control: products, staff, sales, reports, settings, support |
+| Staff / Cashier | Operational tools such as POS, bills, selected modules by permission |
+| Admin | Platform-level management, support response, revenue and oversight tools |
 
----
+## Security and Data Integrity
 
-## MVP Features (v1)
+- row-level security (RLS) policies applied in Supabase
+- business-level data isolation
+- audit-friendly payment and document logs
+- role-based feature access in app and database flows
+- secrets managed via environment variables
 
-- [x] Authentication (login, register, forgot password, OTP verify)
-- [x] Business onboarding (profile, category, currency, plan)
-- [x] Dashboard with sales analytics
-- [x] Food & Drinks categories + product grid
-- [x] POS — Add to cart, product details
-- [x] Bills — Order list and detail panel
-- [x] Settings — All 6 subsections
-- [x] Supabase database schema with RLS
+## Regional Impact Goals
 
-## Roadmap (v2/v3)
-- [ ] AI sales prediction
-- [ ] Barcode scanner
-- [ ] Full offline mode
-- [ ] Multi-branch support
-- [ ] Tax automation
-- [ ] Loyalty program
-- [ ] ERP integrations
+SmartBiz is designed to help East African SMEs:
 
----
+- reduce daily reconciliation time
+- improve inventory and cash accountability
+- increase owner visibility into true net profit
+- improve team coordination and response speed
+- build trust with cleaner receipts, invoices, and reports
 
-## Security
-- Row Level Security enforced on all tables
-- Passwords hashed by Supabase Auth (bcrypt)
-- No secrets in code — env vars only
-- Device session management
-- Audit trails via `activity_logs`
+## Contributing
+
+Contributions are welcome. Focus areas:
+
+- offline-first behavior and sync resilience
+- multi-branch operations
+- improved East African tax and compliance workflows
+- deeper local payment and reporting integrations
+
+## License
+
+This project is private unless otherwise specified by repository owner.

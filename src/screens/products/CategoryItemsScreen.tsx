@@ -32,11 +32,11 @@ const EMPTY_FORM: ProductForm = {
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 interface Props {
-  category: Category;
-  onBack: () => void;
+  category?: Category | null;
+  onBack?: () => void;
 }
 
-export function CategoryItemsScreen({ category, onBack }: Props) {
+export function CategoryItemsScreen({ category = null, onBack }: Props) {
   const { business } = useAuth();
   const { addItem, items } = useCart();
   const { width } = useWindowDimensions();
@@ -46,7 +46,7 @@ export function CategoryItemsScreen({ category, onBack }: Props) {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [mode, setMode] = useState<'category' | 'all'>('category');
+  const [mode, setMode] = useState<'category' | 'all'>(category?.id ? 'category' : 'all');
   const [importing, setImporting] = useState(false);
 
   // Detail modal on mobile
@@ -71,7 +71,7 @@ export function CategoryItemsScreen({ category, onBack }: Props) {
       .eq('is_active', true)
       .order('name');
 
-    if (mode === 'category') {
+    if (mode === 'category' && category?.id) {
       query = query.eq('category_id', category.id);
     }
 
@@ -81,9 +81,15 @@ export function CategoryItemsScreen({ category, onBack }: Props) {
     if (list.length && !selectedProduct) setSelectedProduct(list[0]);
     if (!list.length) setSelectedProduct(null);
     setLoading(false);
-  }, [business?.id, category.id, mode]);
+  }, [business?.id, category?.id, mode]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  useEffect(() => {
+    if (!category?.id && mode === 'category') {
+      setMode('all');
+    }
+  }, [category?.id, mode]);
 
   useRealtimeSubscription('products-rt', 'products', () => fetchProducts(true), !!business?.id);
 
@@ -175,8 +181,9 @@ export function CategoryItemsScreen({ category, onBack }: Props) {
       let updated = 0;
 
       for (const row of parsedRows) {
-        const rowCategoryId = (row.categoryName && categoryMap.get(row.categoryName.toLowerCase()))
-          || (mode === 'category' ? category.id : category.id);
+        const rowCategoryId =
+          (row.categoryName && categoryMap.get(row.categoryName.toLowerCase()))
+          || (mode === 'category' && category?.id ? category.id : null);
         const key = `${row.name.toLowerCase()}::${rowCategoryId ?? ''}`;
         const existing = productMap.get(key);
 
@@ -400,7 +407,7 @@ export function CategoryItemsScreen({ category, onBack }: Props) {
       const { error } = await supabase.from('products').insert({
         ...payload,
         business_id: business.id,
-        category_id: category.id,
+        category_id: mode === 'category' && category?.id ? category.id : null,
         is_active: true,
       });
       if (error) Alert.alert('Error', error.message);
@@ -480,16 +487,18 @@ export function CategoryItemsScreen({ category, onBack }: Props) {
         <View style={styles.gridWrap}>
           <View style={styles.gridHeader}>
             <View style={{ flex: 1, marginRight: SPACING.sm }}>
-              <Text style={styles.gridTitle}>{mode === 'all' ? 'All Products' : category.name}</Text>
+              <Text style={styles.gridTitle}>{mode === 'all' ? 'All Products' : (category?.name ?? 'Category')}</Text>
               <Text style={styles.gridSubTitle}>{posLabel}</Text>
             </View>
             <View style={styles.headerActions}>
-              <TouchableOpacity
-                style={[styles.modeBtn, mode === 'category' && styles.modeBtnActive]}
-                onPress={() => setMode('category')}
-              >
-                <Text style={[styles.modeBtnText, mode === 'category' && styles.modeBtnTextActive]}>Category</Text>
-              </TouchableOpacity>
+              {!!category?.id && (
+                <TouchableOpacity
+                  style={[styles.modeBtn, mode === 'category' && styles.modeBtnActive]}
+                  onPress={() => setMode('category')}
+                >
+                  <Text style={[styles.modeBtnText, mode === 'category' && styles.modeBtnTextActive]}>Category</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={[styles.modeBtn, mode === 'all' && styles.modeBtnActive]}
                 onPress={() => setMode('all')}
@@ -531,7 +540,7 @@ export function CategoryItemsScreen({ category, onBack }: Props) {
           ) : filteredProducts.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name={productIcon as any} size={48} color={COLORS.textMuted} />
-              <Text style={styles.emptyText}>No products in this category</Text>
+              <Text style={styles.emptyText}>{mode === 'category' ? 'No products in this category' : 'No products yet'}</Text>
               <TouchableOpacity style={styles.emptyAddBtn} onPress={openAdd}>
                 <Text style={styles.emptyAddText}>Add Product</Text>
               </TouchableOpacity>

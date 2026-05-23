@@ -3,7 +3,6 @@ import { View, StyleSheet, Text, TouchableOpacity, useWindowDimensions } from 'r
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Sidebar } from '../components/common/Sidebar';
 import { DashboardScreen } from './dashboard/DashboardScreen';
-import { CategoriesScreen } from './products/CategoriesScreen';
 import { CategoryItemsScreen } from './products/CategoryItemsScreen';
 import { BillsScreen } from './bills/BillsScreen';
 import { SettingsScreen } from './settings/SettingsScreen';
@@ -115,8 +114,8 @@ export function MainLayout() {
 
   const getBreadcrumbs = () => {
     if (route === 'Dashboard') return ['Dashboard', 'Sales statistics'];
-    if (route === 'Inventory' && selectedCategory) return ['Inventory', 'Categories', selectedCategory.name];
-    if (route === 'Inventory') return ['Inventory', 'Categories'];
+    if (route === 'Inventory' && selectedCategory) return ['Inventory', 'Products', selectedCategory.name];
+    if (route === 'Inventory') return ['Inventory', 'Products'];
     if (route === 'POS') return ['POS', 'Checkout'];
     if (route === 'Reports') return ['Reports', 'Sales analytics'];
     if (route === 'Bills') return ['Bills', 'Payment history'];
@@ -151,15 +150,12 @@ export function MainLayout() {
       case 'Dashboard':
         return <DashboardScreen />;
       case 'Inventory':
-        if (selectedCategory) {
-          return (
-            <CategoryItemsScreen
-              category={selectedCategory}
-              onBack={() => setSelectedCategory(null)}
-            />
-          );
-        }
-        return <CategoriesScreen onCategorySelect={setSelectedCategory} />;
+        return (
+          <CategoryItemsScreen
+            category={selectedCategory}
+            onBack={() => setSelectedCategory(null)}
+          />
+        );
       case 'Bills':
         return <BillsScreen />;
       case 'POS':

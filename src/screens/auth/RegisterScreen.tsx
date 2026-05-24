@@ -74,6 +74,39 @@ const PLANS = [
   },
 ];
 
+const MOBILE_MONEY_MIN_AMOUNT = 500;
+
+function normalizeTzPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('255') && digits.length === 12) return digits;
+  if (digits.startsWith('0') && digits.length === 10) return `255${digits.slice(1)}`;
+  if (digits.length === 9) return `255${digits}`;
+  return digits;
+}
+
+function isValidTzPhone(raw: string): boolean {
+  return /^255\d{9}$/.test(normalizeTzPhone(raw));
+}
+
+function hasLetter(raw: string): boolean {
+  return /[A-Za-z]/.test(raw);
+}
+
+function isValidPersonName(raw: string): boolean {
+  const v = raw.trim();
+  return v.length >= 3 && v.length <= 80 && hasLetter(v);
+}
+
+function isValidBusinessName(raw: string): boolean {
+  const v = raw.trim();
+  return v.length >= 3 && v.length <= 100 && hasLetter(v);
+}
+
+function isValidEmailStrict(raw: string): boolean {
+  const v = raw.trim();
+  return /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(v);
+}
+
 type Step = 'account' | 'plan' | 'payment';
 
 export function RegisterScreen({ navigation }: Props) {
@@ -105,9 +138,11 @@ export function RegisterScreen({ navigation }: Props) {
   const validateAccount = () => {
     const e: Record<string, string> = {};
     if (!fullName.trim()) e.fullName = 'Full name is required';
+    else if (!isValidPersonName(fullName)) e.fullName = 'Enter a valid full name (3-80 chars, letters required)';
     if (!businessName.trim()) e.businessName = 'Business name is required';
+    else if (!isValidBusinessName(businessName)) e.businessName = 'Enter a valid business name (3-100 chars, letters required)';
     if (!email.trim()) e.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(email)) e.email = 'Invalid email address';
+    else if (!isValidEmailStrict(email)) e.email = 'Invalid email address';
     if (!password) e.password = 'Password is required';
     else if (password.length < 6) e.password = 'Minimum 6 characters';
     if (password !== confirmPassword) e.confirmPassword = 'Passwords do not match';
@@ -138,11 +173,21 @@ export function RegisterScreen({ navigation }: Props) {
   const handleCreateAccount = async (snippePaymentId: string | null) => {
     setLoading(true);
     try {
+      const cleanFullName = fullName.trim();
+      const cleanBusinessName = businessName.trim();
+
+      if (!isValidPersonName(cleanFullName)) {
+        throw new Error('Enter a valid full name (3-80 chars, letters required).');
+      }
+      if (!isValidBusinessName(cleanBusinessName)) {
+        throw new Error('Enter a valid business name (3-100 chars, letters required).');
+      }
+
       // 1. Create auth user
       const { error: signUpError } = await signUp(
         email.trim().toLowerCase(),
         password,
-        fullName.trim(),
+        cleanFullName,
       );
 
       if (signUpError) {
@@ -179,7 +224,7 @@ export function RegisterScreen({ navigation }: Props) {
       const { data: biz, error: bizErr } = await supabase
         .from('businesses')
         .insert({
-          name: businessName.trim(),
+          name: cleanBusinessName,
           owner_id: userId,
           phone: phone.trim() || null,
           is_verified: false,
@@ -243,11 +288,32 @@ export function RegisterScreen({ navigation }: Props) {
 
   // ── Initiate mobile money payment to admin account ───────
   const handlePay = async () => {
-    const normalized = payerPhone.trim().replace(/\s/g, '');
-    if (!normalized || normalized.length < 9) {
+    const normalized = normalizeTzPhone(payerPhone);
+    if (!isValidTzPhone(normalized)) {
       setPayerPhoneError('Enter a valid mobile money number');
       return;
     }
+
+    if (plan.price < MOBILE_MONEY_MIN_AMOUNT) {
+      Alert.alert('Invalid amount', `Plan amount must be at least TZS ${MOBILE_MONEY_MIN_AMOUNT.toLocaleString()} for mobile money.`);
+      return;
+    }
+
+    const cleanFullName = fullName.trim();
+    const cleanBusinessName = businessName.trim();
+    if (cleanFullName.length < 3 || cleanFullName.length > 80) {
+      Alert.alert('Invalid name', 'Full name must be between 3 and 80 characters.');
+      return;
+    }
+    if (!hasLetter(cleanFullName)) {
+      Alert.alert('Invalid name', 'Full name must include letters.');
+      return;
+    }
+    if (!isValidBusinessName(cleanBusinessName)) {
+      Alert.alert('Invalid business name', 'Business name must be 3-100 characters and include letters.');
+      return;
+    }
+
     setPayerPhoneError('');
     setPaymentStep('paying');
 
@@ -257,7 +323,7 @@ export function RegisterScreen({ navigation }: Props) {
       const { error: signUpError } = await signUp(
         email.trim().toLowerCase(),
         password,
-        fullName.trim(),
+        cleanFullName,
       );
 
       if (signUpError && !signUpError.includes('confirmation') && !signUpError.includes('verify')) {
@@ -284,7 +350,7 @@ export function RegisterScreen({ navigation }: Props) {
       const { data: biz, error: bizErr } = await supabase
         .from('businesses')
         .insert({
-          name: businessName.trim(),
+          name: cleanBusinessName,
           owner_id: session.user.id,
           phone: phone.trim() || null,
           is_verified: false,
@@ -310,7 +376,7 @@ export function RegisterScreen({ navigation }: Props) {
             business_id: biz.id,
             idempotency_key: generateIdempotencyKey('reg'),
             payer_phone: normalized,
-            payer_name: fullName.trim(),
+            payer_name: cleanFullName,
             metadata: { plan: selectedPlan, email: email.trim().toLowerCase() },
           },
         },

@@ -41,6 +41,12 @@ function isValidTzPhone(raw: string): boolean {
   return /^255\d{9}$/.test(normalized);
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+const MOBILE_MONEY_MIN_AMOUNT = 500;
+
 export function POSScreen() {
   const { business, user } = useAuth();
   const { currency } = useSettings();
@@ -80,7 +86,9 @@ export function POSScreen() {
   const [awaitingMobileConfirmation, setAwaitingMobileConfirmation] = useState(false);
   const [pendingSaleId, setPendingSaleId] = useState<string | null>(null);
   const [pendingOrderNumber, setPendingOrderNumber] = useState<string | null>(null);
+  const [pendingStartedAt, setPendingStartedAt] = useState<number | null>(null);
   const [mobileStatusText, setMobileStatusText] = useState('');
+  const [checkoutFeedback, setCheckoutFeedback] = useState<{ type: 'error' | 'info'; text: string } | null>(null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
@@ -95,6 +103,7 @@ export function POSScreen() {
     setMobilePhone('');
     setPayerName('');
     setPayMethod('cash');
+    setCheckoutFeedback(null);
     setCheckoutVisible(true);
   };
 
@@ -356,9 +365,16 @@ export function POSScreen() {
       Alert.alert('Name required', "Please enter the payer's name.");
       return;
     }
+    if (payMethod === 'mobile_money' && total < MOBILE_MONEY_MIN_AMOUNT) {
+      const message = `Mobile money payments must be at least ${currency} ${MOBILE_MONEY_MIN_AMOUNT.toLocaleString()}. Add more items or use cash.`;
+      setCheckoutFeedback({ type: 'error', text: message });
+      Alert.alert('Amount too low', message);
+      return;
+    }
 
     const normalizedPayerPhone = payMethod === 'mobile_money' ? normalizeTzPhone(mobilePhone) : '';
 
+    setCheckoutFeedback(null);
     setProcessingSale(true);
     try {
       const { orderNumber, saleId } = await persistSale({
@@ -371,20 +387,34 @@ export function POSScreen() {
 
       if (payMethod === 'mobile_money') {
         const idempotencyKey = `pos_${saleId.slice(0, 8)}_${Date.now().toString(36)}`;
+        const payerEmail = selectedCustomer?.email?.trim();
+        const safePayerEmail = payerEmail && isValidEmail(payerEmail) ? payerEmail : undefined;
 
-        const { data, error: fnError } = await supabase.functions.invoke('initiate-payment', {
-          body: {
-            payment_type: 'pos',
-            channel: 'mobile',
-            amount: total,
-            business_id: business.id,
-            idempotency_key: idempotencyKey,
-            payer_phone: normalizedPayerPhone,
-            payer_name: payerName.trim(),
-            payer_email: selectedCustomer?.email ?? undefined,
-            pos_order_id: saleId,
-          },
-        });
+        // Prevent indefinite spinner if the function call hangs.
+        const invokeWithTimeout = async (timeoutMs: number) => {
+          return await Promise.race([
+            supabase.functions.invoke('initiate-payment', {
+              body: {
+                payment_type: 'pos',
+                channel: 'mobile',
+                amount: total,
+                business_id: business.id,
+                idempotency_key: idempotencyKey,
+                payer_phone: normalizedPayerPhone,
+                payer_name: payerName.trim(),
+                payer_email: safePayerEmail,
+                pos_order_id: saleId,
+              },
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Payment request timed out. Please try again.')), timeoutMs),
+            ),
+          ]);
+        };
+
+        const invokeResult = await invokeWithTimeout(25000) as any;
+        const data = invokeResult?.data as { success?: boolean; message?: string } | null;
+        const fnError = invokeResult?.error as { message?: string; context?: unknown } | null;
 
         if (fnError || !data?.success) {
           let backendMessage = data?.message as string | undefined;
@@ -413,6 +443,10 @@ export function POSScreen() {
           }
 
           await rollbackFailedMobileCheckout(saleId);
+          setCheckoutFeedback({
+            type: 'error',
+            text: backendMessage ?? fnError?.message ?? 'Could not send payment request to phone.',
+          });
           Alert.alert(
             'Payment failed',
             backendMessage ?? fnError?.message ?? 'Could not send payment request to phone.',
@@ -422,9 +456,14 @@ export function POSScreen() {
 
         setPendingSaleId(saleId);
         setPendingOrderNumber(orderNumber);
+        setPendingStartedAt(Date.now());
         setAwaitingMobileConfirmation(true);
         setMobilePhone(normalizedPayerPhone);
         setMobileStatusText('Payment request sent. Waiting for customer confirmation on phone...');
+        setCheckoutFeedback({
+          type: 'info',
+          text: 'Payment request sent. Waiting for customer confirmation on phone...',
+        });
         return;
       }
 
@@ -444,6 +483,7 @@ export function POSScreen() {
       );
       fetchProducts();
     } catch (e: any) {
+      setCheckoutFeedback({ type: 'error', text: e?.message ?? 'Could not complete checkout.' });
       Alert.alert('Checkout error', e?.message ?? 'Could not complete checkout.');
     } finally {
       setProcessingSale(false);
@@ -470,7 +510,9 @@ export function POSScreen() {
         setAwaitingMobileConfirmation(false);
         setPendingSaleId(null);
         setPendingOrderNumber(null);
+        setPendingStartedAt(null);
         setMobileStatusText('');
+        setCheckoutFeedback(null);
 
         clearCart();
         setSelectedCustomerId(null);
@@ -502,8 +544,30 @@ export function POSScreen() {
         setAwaitingMobileConfirmation(false);
         setPendingSaleId(null);
         setPendingOrderNumber(null);
+        setPendingStartedAt(null);
         setMobileStatusText('');
+        setCheckoutFeedback({
+          type: 'error',
+          text: payRow.error_message ?? 'The customer did not complete the mobile money payment.',
+        });
         Alert.alert('Payment not completed', payRow.error_message ?? 'The customer did not complete the mobile money payment.');
+        return;
+      }
+
+      if (pendingStartedAt && Date.now() - pendingStartedAt > 120000) {
+        setAwaitingMobileConfirmation(false);
+        setPendingSaleId(null);
+        setPendingOrderNumber(null);
+        setPendingStartedAt(null);
+        setMobileStatusText('');
+        setCheckoutFeedback({
+          type: 'error',
+          text: 'No mobile money confirmation received in time. You can retry or complete this sale later from Bills.',
+        });
+        Alert.alert(
+          'Payment confirmation timeout',
+          'No mobile money confirmation received in time. You can retry or complete this sale later from Bills.',
+        );
       }
     };
 
@@ -518,6 +582,7 @@ export function POSScreen() {
     awaitingMobileConfirmation,
     pendingSaleId,
     pendingOrderNumber,
+    pendingStartedAt,
     business?.id,
     clearCart,
     fetchProducts,
@@ -918,7 +983,10 @@ export function POSScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Confirm Payment</Text>
                 <TouchableOpacity
-                  onPress={() => setCheckoutVisible(false)}
+                  onPress={() => {
+                    setCheckoutVisible(false);
+                    setCheckoutFeedback(null);
+                  }}
                   style={[styles.modalCloseBtn, awaitingMobileConfirmation && { opacity: 0.4 }]}
                   disabled={awaitingMobileConfirmation}
                 >
@@ -930,6 +998,25 @@ export function POSScreen() {
                 <View style={styles.waitingBanner}>
                   <ActivityIndicator size="small" color={COLORS.primary} />
                   <Text style={styles.waitingBannerText}>{mobileStatusText}</Text>
+                </View>
+              )}
+
+              {checkoutFeedback && (
+                <View style={[
+                  styles.feedbackBanner,
+                  checkoutFeedback.type === 'error' ? styles.feedbackBannerError : styles.feedbackBannerInfo,
+                ]}>
+                  <Ionicons
+                    name={checkoutFeedback.type === 'error' ? 'warning-outline' : 'information-circle-outline'}
+                    size={14}
+                    color={checkoutFeedback.type === 'error' ? COLORS.error : COLORS.primary}
+                  />
+                  <Text style={[
+                    styles.feedbackBannerText,
+                    checkoutFeedback.type === 'error' ? styles.feedbackBannerTextError : styles.feedbackBannerTextInfo,
+                  ]}>
+                    {checkoutFeedback.text}
+                  </Text>
                 </View>
               )}
 
@@ -1054,7 +1141,10 @@ export function POSScreen() {
               <View style={styles.modalBtns}>
                 <TouchableOpacity
                   style={[styles.modalCancelBtn, awaitingMobileConfirmation && { opacity: 0.5 }]}
-                  onPress={() => setCheckoutVisible(false)}
+                  onPress={() => {
+                    setCheckoutVisible(false);
+                    setCheckoutFeedback(null);
+                  }}
                   disabled={awaitingMobileConfirmation}
                 >
                   <Text style={styles.modalCancelText}>Cancel</Text>
@@ -1593,6 +1683,35 @@ const styles = StyleSheet.create({
     color: COLORS.info,
     fontSize: FONTS.sizes.xs,
     fontWeight: '600',
+  },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  feedbackBannerInfo: {
+    borderColor: COLORS.infoLight,
+    backgroundColor: COLORS.infoLight + '66',
+  },
+  feedbackBannerError: {
+    borderColor: COLORS.error + '55',
+    backgroundColor: COLORS.error + '12',
+  },
+  feedbackBannerText: {
+    flex: 1,
+    fontSize: FONTS.sizes.xs,
+    fontWeight: '600',
+  },
+  feedbackBannerTextInfo: {
+    color: COLORS.info,
+  },
+  feedbackBannerTextError: {
+    color: COLORS.error,
   },
   modalCloseBtn: {
     width: 32,

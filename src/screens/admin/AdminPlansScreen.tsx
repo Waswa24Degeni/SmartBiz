@@ -38,6 +38,19 @@ const PLAN_META: Record<string, { price: string; period: string; color: string; 
 };
 
 const PLAN_PRICE_MAP: Record<string, number> = { free: 0, starter: 15000, business: 35000, premium: 80000 };
+const MOBILE_MONEY_MIN_AMOUNT = 500;
+
+function normalizeTzPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('255') && digits.length === 12) return digits;
+  if (digits.startsWith('0') && digits.length === 10) return `255${digits.slice(1)}`;
+  if (digits.length === 9) return `255${digits}`;
+  return digits;
+}
+
+function isValidTzPhone(raw: string): boolean {
+  return /^255\d{9}$/.test(normalizeTzPhone(raw));
+}
 
 interface SubRow {
   id: string;
@@ -289,6 +302,12 @@ export function AdminPlansScreen() {
     let snippeReference: string | null = null;
 
     if (planAmount > 0) {
+      if (planAmount < MOBILE_MONEY_MIN_AMOUNT) {
+        setCreateSaving(false);
+        Alert.alert('Invalid amount', `Subscription payment must be at least TZS ${MOBILE_MONEY_MIN_AMOUNT.toLocaleString()}.`);
+        return;
+      }
+
       // 1. Load owner phone from business_payment_config or users table
       const { data: bizPayCfg } = await supabase
         .from('business_payment_config')
@@ -321,6 +340,20 @@ export function AdminPlansScreen() {
         return;
       }
 
+      const normalizedOwnerPhone = normalizeTzPhone(ownerPhone);
+      if (!isValidTzPhone(normalizedOwnerPhone)) {
+        setCreateSaving(false);
+        Alert.alert('Invalid owner phone', 'Owner payment phone must be a valid Tanzania mobile number.');
+        return;
+      }
+
+      const cleanOwnerName = ownerName.trim();
+      if (!cleanOwnerName || cleanOwnerName.length < 3 || cleanOwnerName.length > 80) {
+        setCreateSaving(false);
+        Alert.alert('Invalid owner name', 'Owner name must be between 3 and 80 characters.');
+        return;
+      }
+
       // 2. Initiate payment via Edge Function (API key stays server-side)
       const { data: paymentResult, error: paymentErr } = await supabase.functions.invoke(
         'initiate-payment',
@@ -331,8 +364,8 @@ export function AdminPlansScreen() {
             amount:          planAmount,
             business_id:     createBusinessId,
             idempotency_key: generateIdempotencyKey('sub'),
-            payer_phone:     ownerPhone,
-            payer_name:      ownerName,
+            payer_phone:     normalizedOwnerPhone,
+            payer_name:      cleanOwnerName,
             payer_email:     ownerEmail || undefined,
             metadata: { plan: createPlan },
           },

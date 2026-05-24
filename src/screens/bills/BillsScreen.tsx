@@ -61,6 +61,19 @@ const PAYMENT_METHODS = [
 ] as const;
 
 const STATUSES = ['All', 'active', 'completed', 'cancelled'];
+const MOBILE_MONEY_MIN_AMOUNT = 500;
+
+function normalizeTzPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('255') && digits.length === 12) return digits;
+  if (digits.startsWith('0') && digits.length === 10) return `255${digits.slice(1)}`;
+  if (digits.length === 9) return `255${digits}`;
+  return digits;
+}
+
+function isValidTzPhone(raw: string): boolean {
+  return /^255\d{9}$/.test(normalizeTzPhone(raw));
+}
 
 interface BillsScreenProps {
   prefillProduct?: Product | null;
@@ -281,14 +294,28 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
       Alert.alert('Phone required', "Please enter the customer's mobile money phone number.");
       return;
     }
+    if (chargeMethod === 'mobile_money' && !isValidTzPhone(chargeMobilePhone)) {
+      Alert.alert('Invalid phone', 'Enter a valid Tanzania mobile number (07XXXXXXXX or 2557XXXXXXX).');
+      return;
+    }
     if (chargeMethod === 'mobile_money' && !chargePayerName.trim()) {
       Alert.alert('Name required', "Please enter the payer's name.");
+      return;
+    }
+    if (chargeMethod === 'mobile_money' && chargePayerName.trim().length < 3) {
+      Alert.alert('Invalid name', 'Payer name must be at least 3 characters.');
+      return;
+    }
+    if (chargeMethod === 'mobile_money' && newTotal < MOBILE_MONEY_MIN_AMOUNT) {
+      Alert.alert('Amount too low', `Mobile money payments must be at least ${currency} ${MOBILE_MONEY_MIN_AMOUNT.toLocaleString()}.`);
       return;
     }
 
     setActing(true);
     try {
       if (chargeMethod === 'mobile_money') {
+        const normalizedPayerPhone = normalizeTzPhone(chargeMobilePhone);
+
         // ── Mobile money: trigger Snippe USSD push via Edge Function ──
         // Store the payment details on the sale first so the webhook can
         // find the order when Snippe confirms.
@@ -296,7 +323,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
           .from('sales')
           .update({
             payment_method: 'mobile_money',
-            mobile_phone:   chargeMobilePhone.trim(),
+            mobile_phone:   normalizedPayerPhone,
             payer_name:     chargePayerName.trim(),
             discount,
             total:          newTotal,
@@ -318,7 +345,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
             amount:          newTotal,
             business_id:     chargeSale.business_id,
             idempotency_key: `${chargeSale.id}_${Date.now()}`,
-            payer_phone:     chargeMobilePhone.trim(),
+            payer_phone:     normalizedPayerPhone,
             payer_name:      chargePayerName.trim(),
             pos_order_id:    chargeSale.id,
           },
@@ -336,7 +363,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
         fetchSales(true);
         Alert.alert(
           'Request Sent',
-          `A payment prompt has been sent to ${chargeMobilePhone.trim()}. The order will be marked complete once the customer confirms on their phone.`,
+          `A payment prompt has been sent to ${normalizedPayerPhone}. The order will be marked complete once the customer confirms on their phone.`,
         );
       } else {
         // ── Cash: complete immediately ──────────────────────────────

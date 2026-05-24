@@ -101,6 +101,16 @@ function ProfileSection() {
   const [logoUri, setLogoUri]     = useState<string | null>(business?.logo_url ?? null);
   const [logoUploading, setLogoUploading] = useState(false);
 
+  const hasLetter = (raw: string): boolean => /[A-Za-z]/.test(raw);
+  const isValidProfileName = (raw: string): boolean => {
+    const v = raw.trim();
+    return v.length >= 3 && v.length <= 80 && hasLetter(v);
+  };
+  const isValidBusinessName = (raw: string): boolean => {
+    const v = raw.trim();
+    return v.length >= 3 && v.length <= 100 && hasLetter(v);
+  };
+
   useEffect(() => {
     setFullName(user?.full_name ?? '');
     setPhone(user?.phone ?? '');
@@ -288,6 +298,16 @@ function ProfileSection() {
 
   const handleSave = async () => {
     if (!user?.id) return;
+
+    if (!isValidProfileName(fullName)) {
+      Alert.alert('Invalid name', 'Full name must be 3-80 characters and include letters.');
+      return;
+    }
+    if (business?.id && !isValidBusinessName(bizName)) {
+      Alert.alert('Invalid business name', 'Business name must be 3-100 characters and include letters.');
+      return;
+    }
+
     setSaving(true);
     const [userRes, bizRes] = await Promise.all([
       supabase.from('users').update({ full_name: fullName.trim(), phone: phone.trim() }).eq('id', user.id),
@@ -666,6 +686,17 @@ function PaymentSection() {
       )
     : SNIPPE_BANKS;
 
+  const normalizePhone = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.startsWith('255') && digits.length === 12) return digits;
+    if (digits.startsWith('0') && digits.length === 10) return `255${digits.slice(1)}`;
+    if (digits.length === 9) return `255${digits}`;
+    return digits;
+  };
+
+  const isValidPhone = (raw: string): boolean => /^255\d{9}$/.test(normalizePhone(raw));
+  const isValidEmail = (raw: string): boolean => /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(raw.trim());
+
   // CREATE or UPDATE
   const handleSave = async () => {
     if (!business?.id) {
@@ -676,21 +707,41 @@ function PaymentSection() {
       Alert.alert('Required', 'Please enter a mobile money phone number.');
       return;
     }
+    if (payoutMethod === 'mobile' && !isValidPhone(receivePhone)) {
+      Alert.alert('Invalid phone', 'Enter a valid Tanzania mobile number (07XXXXXXXX or 2557XXXXXXX).');
+      return;
+    }
+    if (receiveName.trim() && (receiveName.trim().length < 3 || receiveName.trim().length > 80)) {
+      Alert.alert('Invalid name', 'Receiver name must be between 3 and 80 characters.');
+      return;
+    }
+    if (receiveEmail.trim() && !isValidEmail(receiveEmail)) {
+      Alert.alert('Invalid email', 'Enter a valid receiver email address.');
+      return;
+    }
     if (payoutMethod === 'bank') {
       if (!bankCode)               { Alert.alert('Required', 'Please select a bank.'); return; }
       if (!bankAccount.trim())     { Alert.alert('Required', 'Please enter your bank account number.'); return; }
       if (!bankAccountName.trim()) { Alert.alert('Required', 'Please enter the account holder name.'); return; }
+      if (!/^[A-Za-z0-9]{6,34}$/.test(bankAccount.replace(/\s+/g, ''))) {
+        Alert.alert('Invalid account', 'Bank account must be 6-34 letters/numbers.');
+        return;
+      }
+      if (bankAccountName.trim().length < 3 || bankAccountName.trim().length > 80) {
+        Alert.alert('Invalid name', 'Account holder name must be between 3 and 80 characters.');
+        return;
+      }
     }
     setSaving(true);
     try {
       const payload = {
         business_id:       business.id,
         payout_method:     payoutMethod,
-        receive_phone:     receivePhone.trim()    || null,
+        receive_phone:     receivePhone.trim() ? normalizePhone(receivePhone) : null,
         receive_name:      receiveName.trim()     || null,
         receive_email:     receiveEmail.trim()    || null,
         bank_code:         bankCode               || null,
-        bank_account:      bankAccount.trim()     || null,
+        bank_account:      bankAccount.replace(/\s+/g, '').trim() || null,
         bank_account_name: bankAccountName.trim() || null,
       };
 
@@ -1234,6 +1285,20 @@ const SUB_PLANS = [
   { id: 'premium',  name: 'Premium',  price: 80000,  features: ['Unlimited users', 'All features', 'Dedicated support'] },
 ] as const;
 
+const MOBILE_MONEY_MIN_AMOUNT = 500;
+
+function normalizeTzPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('255') && digits.length === 12) return digits;
+  if (digits.startsWith('0') && digits.length === 10) return `255${digits.slice(1)}`;
+  if (digits.length === 9) return `255${digits}`;
+  return digits;
+}
+
+function isValidTzPhone(raw: string): boolean {
+  return /^255\d{9}$/.test(normalizeTzPhone(raw));
+}
+
 type SubPlanId = typeof SUB_PLANS[number]['id'];
 
 function SubscriptionSection() {
@@ -1270,9 +1335,18 @@ function SubscriptionSection() {
   const plan = SUB_PLANS.find(p => p.id === selectedPlan)!;
 
   const handlePay = async () => {
-    const normalized = payerPhone.trim().replace(/\s/g, '');
-    if (!normalized || normalized.length < 9) {
+    const normalized = normalizeTzPhone(payerPhone);
+    if (!isValidTzPhone(normalized)) {
       setPhoneError('Enter a valid mobile money number (e.g. 0712345678)');
+      return;
+    }
+    if (plan.price < MOBILE_MONEY_MIN_AMOUNT) {
+      Alert.alert('Invalid amount', `Plan amount must be at least TZS ${MOBILE_MONEY_MIN_AMOUNT.toLocaleString()} for mobile money.`);
+      return;
+    }
+    const cleanPayerName = (payerName.trim() || user?.full_name?.trim() || 'Customer');
+    if (cleanPayerName.length < 3 || cleanPayerName.length > 80) {
+      Alert.alert('Invalid name', 'Payer name must be between 3 and 80 characters.');
       return;
     }
     if (!business?.id) {
@@ -1293,7 +1367,7 @@ function SubscriptionSection() {
             business_id:     business.id,
             idempotency_key: generateIdempotencyKey('sub'),
             payer_phone:     normalized,
-            payer_name:      payerName.trim() || user?.full_name || undefined,
+            payer_name:      cleanPayerName,
             metadata: { plan: selectedPlan },
           },
         },

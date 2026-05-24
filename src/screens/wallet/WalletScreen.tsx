@@ -43,7 +43,8 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MOBILE_NETWORKS = ['Vodacom', 'Airtel', 'Tigo', 'Halotel', 'TTCL', 'Zantel'];
-const MIN_WITHDRAWAL  = 500;   // TZS
+const PAYOUT_FEE      = 1500;  // TZS
+const MIN_WITHDRAWAL  = PAYOUT_FEE + 1;   // Must be greater than payout fee
 const MAX_ATTEMPTS    = 3;     // password attempts before lockout
 
 type WalletTab = 'transactions' | 'withdrawals' | 'methods';
@@ -64,6 +65,18 @@ function fmtMoney(amount: number, currency = 'TZS'): string {
 function fmtDate(iso: string): string {
   try { return format(parseISO(iso), 'dd MMM yyyy, HH:mm'); }
   catch { return iso; }
+}
+
+function normalizeTzPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('255') && digits.length === 12) return digits;
+  if (digits.startsWith('0') && digits.length === 10) return `255${digits.slice(1)}`;
+  if (digits.length === 9) return `255${digits}`;
+  return digits;
+}
+
+function isValidTzPhone(raw: string): boolean {
+  return /^255\d{9}$/.test(normalizeTzPhone(raw));
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -288,7 +301,7 @@ export function WalletScreen() {
                 if ((wallet?.balance ?? 0) < MIN_WITHDRAWAL) {
                   Alert.alert(
                     'Insufficient Balance',
-                    `Minimum withdrawal is ${fmtMoney(MIN_WITHDRAWAL)}. ` +
+                    `Withdrawal must be greater than payout fee (${fmtMoney(PAYOUT_FEE)}). Minimum is ${fmtMoney(MIN_WITHDRAWAL)}. ` +
                     `Current balance: ${fmtMoney(wallet?.balance ?? 0)}`
                   );
                   return;
@@ -645,6 +658,7 @@ function WithdrawModal({
 
   const numAmount = parseFloat(amount.replace(/,/g, '')) || 0;
   const available = wallet?.balance ?? 0;
+  const netAmount = Math.max(0, numAmount - PAYOUT_FEE);
   const isAmountValid = numAmount >= MIN_WITHDRAWAL && numAmount <= available;
 
   // ── Step 1 → 2: validate form ─────────────────────────────────────────────
@@ -652,7 +666,7 @@ function WithdrawModal({
     if (!isAmountValid) {
       Alert.alert('Invalid Amount',
         numAmount < MIN_WITHDRAWAL
-          ? `Minimum withdrawal is ${fmtMoney(MIN_WITHDRAWAL)}.`
+          ? `Withdrawal amount must be greater than payout fee (${fmtMoney(PAYOUT_FEE)}). Minimum is ${fmtMoney(MIN_WITHDRAWAL)}.`
           : `Amount exceeds available balance of ${fmtMoney(available)}.`
       );
       return;
@@ -704,7 +718,7 @@ function WithdrawModal({
         p_business_id:      businessId,
         p_payout_method_id: selectedId,
         p_amount:           numAmount,
-        p_fee:              0,
+        p_fee:              PAYOUT_FEE,
         p_notes:            notes.trim() || null,
       });
 
@@ -762,7 +776,7 @@ function WithdrawModal({
                 <Text style={styles.fieldLabel}>Amount (TZS) *</Text>
                 <TextInput
                   style={[styles.input, !isAmountValid && numAmount > 0 && styles.inputError]}
-                  placeholder={`Min ${fmtMoney(MIN_WITHDRAWAL)}`}
+                  placeholder={`Min ${fmtMoney(MIN_WITHDRAWAL)} (fee ${fmtMoney(PAYOUT_FEE)})`}
                   keyboardType="numeric"
                   value={amount}
                   onChangeText={setAmount}
@@ -773,7 +787,7 @@ function WithdrawModal({
                 )}
                 {numAmount > 0 && numAmount < MIN_WITHDRAWAL && (
                   <Text style={styles.fieldError}>
-                    Minimum withdrawal is {fmtMoney(MIN_WITHDRAWAL)}
+                    Withdrawal amount must be greater than payout fee ({fmtMoney(PAYOUT_FEE)}). Minimum is {fmtMoney(MIN_WITHDRAWAL)}
                   </Text>
                 )}
 
@@ -843,6 +857,7 @@ function WithdrawModal({
                   <Text style={styles.summaryTitle}>Review Withdrawal</Text>
 
                   <SummaryRow label="Amount"   value={fmtMoney(numAmount)} />
+                  <SummaryRow label="Payout Fee" value={fmtMoney(PAYOUT_FEE)} />
                   <SummaryRow label="To"       value={selectedMethod?.label ?? ''} />
                   <SummaryRow label="Account"  value={maskAccount(selectedMethod?.account_number ?? '')} />
                   <SummaryRow label="Name"     value={selectedMethod?.account_name ?? ''} />
@@ -851,7 +866,7 @@ function WithdrawModal({
                   <View style={styles.summaryDivider} />
                   <View style={styles.summaryNetRow}>
                     <Text style={styles.summaryNetLabel}>You receive</Text>
-                    <Text style={styles.summaryNetValue}>{fmtMoney(numAmount)}</Text>
+                    <Text style={styles.summaryNetValue}>{fmtMoney(netAmount)}</Text>
                   </View>
                 </View>
 
@@ -928,7 +943,7 @@ function WithdrawModal({
                 </View>
                 <Text style={styles.successTitle}>Withdrawal Submitted!</Text>
                 <Text style={styles.successBody2}>
-                  {fmtMoney(numAmount)} will be sent to{' '}
+                  {fmtMoney(netAmount)} will be sent to{' '}
                   <Text style={{ fontWeight: '700' }}>{selectedMethod?.label}</Text>.
                   {'\n\n'}Your balance has been updated and you can track this request
                   in the Withdrawals tab.
@@ -984,9 +999,30 @@ function AddPayoutMethodModal({
   const isEdit = !!editing;
 
   const validate = (): string | null => {
-    if (!label.trim())         return 'Label is required.';
-    if (!accountName.trim())   return 'Account holder name is required.';
-    if (!accountNumber.trim()) return 'Account number / phone is required.';
+    const cleanLabel = label.trim();
+    const cleanAccountName = accountName.trim();
+    const cleanAccountNumber = accountNumber.trim();
+
+    if (!cleanLabel) return 'Label is required.';
+    if (cleanLabel.length < 3 || cleanLabel.length > 60) {
+      return 'Label must be between 3 and 60 characters.';
+    }
+
+    if (!cleanAccountName) return 'Account holder name is required.';
+    if (cleanAccountName.length < 3 || cleanAccountName.length > 80) {
+      return 'Account holder name must be between 3 and 80 characters.';
+    }
+
+    if (!cleanAccountNumber) return 'Account number / phone is required.';
+
+    if (type === 'mobile_money' && !isValidTzPhone(cleanAccountNumber)) {
+      return 'Enter a valid Tanzania mobile number (07XXXXXXXX or 2557XXXXXXX).';
+    }
+
+    if (type === 'bank' && !/^[A-Za-z0-9]{6,34}$/.test(cleanAccountNumber.replace(/\s+/g, ''))) {
+      return 'Enter a valid bank account number (6-34 letters/numbers).';
+    }
+
     if (type === 'bank' && !bankCode) return 'Select a bank.';
     if (type === 'mobile_money' && !network) return 'Select a mobile network.';
     return null;
@@ -1003,7 +1039,9 @@ function AddPayoutMethodModal({
         type,
         label:          label.trim(),
         account_name:   accountName.trim(),
-        account_number: accountNumber.trim(),
+        account_number: type === 'mobile_money'
+          ? normalizeTzPhone(accountNumber)
+          : accountNumber.replace(/\s+/g, '').trim(),
         bank_code:      type === 'bank'         ? bankCode   : undefined,
         bank_name:      type === 'bank'         ? bankName   : undefined,
         mobile_network: type === 'mobile_money' ? network    : undefined,

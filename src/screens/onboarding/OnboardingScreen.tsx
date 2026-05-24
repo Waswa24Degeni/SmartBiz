@@ -35,6 +35,29 @@ const PLANS: { id: string; name: string; priceLabel: string; numericPrice: numbe
   { id: 'premium',  name: 'Premium',  priceLabel: 'TZS 80,000',  numericPrice: 80000, color: '#1B3A2D', icon: 'diamond-outline',   features: ['Unlimited users', 'API access', 'Dedicated manager'] },
 ];
 
+const MOBILE_MONEY_MIN_AMOUNT = 500;
+
+function normalizeTzPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('255') && digits.length === 12) return digits;
+  if (digits.startsWith('0') && digits.length === 10) return `255${digits.slice(1)}`;
+  if (digits.length === 9) return `255${digits}`;
+  return digits;
+}
+
+function isValidTzPhone(raw: string): boolean {
+  return /^255\d{9}$/.test(normalizeTzPhone(raw));
+}
+
+function hasLetter(raw: string): boolean {
+  return /[A-Za-z]/.test(raw);
+}
+
+function isValidBusinessName(raw: string): boolean {
+  const v = raw.trim();
+  return v.length >= 3 && v.length <= 100 && hasLetter(v);
+}
+
 type Step = 'profile' | 'category' | 'currency' | 'plan' | 'payment';
 
 export function OnboardingScreen() {
@@ -65,6 +88,11 @@ export function OnboardingScreen() {
       Alert.alert('Required', 'Business name is required');
       return;
     }
+    if (!isValidBusinessName(businessName)) {
+      Alert.alert('Invalid business name', 'Business name must be 3-100 characters and include letters.');
+      return;
+    }
+    const cleanBusinessName = businessName.trim();
     setLoading(true);
     try {
       const effectiveCategory = category === 'Other'
@@ -74,7 +102,7 @@ export function OnboardingScreen() {
       const { data: biz, error } = await supabase
         .from('businesses')
         .insert({
-          name: businessName.trim(),
+          name: cleanBusinessName,
           category: effectiveCategory,
           owner_id: user!.id,
           phone,
@@ -118,8 +146,8 @@ export function OnboardingScreen() {
 
   // ── Paid plan: create business + initiate Snippe payment ─
   const handleInitiatePay = async () => {
-    const normalized = payerPhone.trim().replace(/\s/g, '');
-    if (!normalized || normalized.length < 9) {
+    const normalized = normalizeTzPhone(payerPhone);
+    if (!isValidTzPhone(normalized)) {
       setPayPhoneError('Enter a valid mobile money number (e.g. 0712345678)');
       return;
     }
@@ -127,6 +155,11 @@ export function OnboardingScreen() {
       Alert.alert('Required', 'Business name is required. Go back to step 1.');
       return;
     }
+    if (!isValidBusinessName(businessName)) {
+      Alert.alert('Invalid business name', 'Business name must be 3-100 characters and include letters.');
+      return;
+    }
+    const cleanBusinessName = businessName.trim();
     setPayPhoneError('');
     setPayStep('paying');
 
@@ -138,7 +171,7 @@ export function OnboardingScreen() {
       const { data: biz, error: bizErr } = await supabase
         .from('businesses')
         .insert({
-          name: businessName.trim(),
+          name: cleanBusinessName,
           category: effectiveCategory,
           owner_id: user!.id,
           phone,
@@ -154,6 +187,14 @@ export function OnboardingScreen() {
       await supabase.from('users').update({ business_id: biz.id }).eq('id', user!.id);
 
       const selectedPlan = PLANS.find(p => p.id === selectedPlanId)!;
+      if (selectedPlan.numericPrice < MOBILE_MONEY_MIN_AMOUNT) {
+        throw new Error(`Selected plan amount is below mobile money minimum of TZS ${MOBILE_MONEY_MIN_AMOUNT.toLocaleString()}.`);
+      }
+
+      const payerName = user?.full_name?.trim() || 'Customer';
+      if (payerName.length < 3 || payerName.length > 80) {
+        throw new Error('Payer name must be between 3 and 80 characters.');
+      }
 
       const { data: payResult, error: payErr } = await supabase.functions.invoke(
         'initiate-payment',
@@ -165,7 +206,7 @@ export function OnboardingScreen() {
             business_id:     biz.id,
             idempotency_key: generateIdempotencyKey('onb'),
             payer_phone:     normalized,
-            payer_name:      user?.full_name || undefined,
+            payer_name:      payerName,
             metadata: { plan: selectedPlanId },
           },
         },

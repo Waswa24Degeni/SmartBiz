@@ -276,6 +276,32 @@ DECLARE
   v_net        NUMERIC;
   v_request_id UUID;
 BEGIN
+  -- Basic input validation
+  IF p_business_id IS NULL THEN
+    RETURN QUERY SELECT false, NULL::UUID, NULL::NUMERIC, 'business_id is required.';
+    RETURN;
+  END IF;
+
+  IF p_payout_method_id IS NULL THEN
+    RETURN QUERY SELECT false, NULL::UUID, NULL::NUMERIC, 'payout_method_id is required.';
+    RETURN;
+  END IF;
+
+  IF p_amount IS NULL OR p_amount <= 0 THEN
+    RETURN QUERY SELECT false, NULL::UUID, NULL::NUMERIC, 'amount must be greater than 0.';
+    RETURN;
+  END IF;
+
+  IF p_fee IS NULL OR p_fee < 0 THEN
+    RETURN QUERY SELECT false, NULL::UUID, NULL::NUMERIC, 'fee must be 0 or greater.';
+    RETURN;
+  END IF;
+
+  IF p_notes IS NOT NULL AND char_length(trim(p_notes)) > 500 THEN
+    RETURN QUERY SELECT false, NULL::UUID, NULL::NUMERIC, 'notes must be 500 characters or fewer.';
+    RETURN;
+  END IF;
+
   -- Authorisation: caller must be the business owner
   IF NOT is_business_owner(p_business_id) THEN
     RETURN QUERY SELECT false, NULL::UUID, NULL::NUMERIC, 'Unauthorised: only the business owner may withdraw.';
@@ -304,6 +330,13 @@ BEGIN
   END IF;
 
   v_net := p_amount - p_fee;
+
+  -- Amount must be greater than the fee to avoid zero/negative net payout.
+  IF p_amount <= p_fee THEN
+    RETURN QUERY SELECT false, NULL::UUID, v_wallet.balance,
+      'Withdrawal amount must be greater than fee (' || p_fee::TEXT || ' TZS).';
+    RETURN;
+  END IF;
 
   -- Sufficient balance check
   IF v_wallet.balance < p_amount THEN

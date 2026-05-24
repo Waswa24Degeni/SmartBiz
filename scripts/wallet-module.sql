@@ -103,15 +103,19 @@ INSERT INTO wallet_accounts (business_id)
 SELECT id FROM businesses
 ON CONFLICT (business_id) DO NOTHING;
 
--- Auto-record wallet collection when a sale is completed
+-- Auto-record wallet collection only for successful mobile-money sales
 CREATE OR REPLACE FUNCTION record_sale_to_wallet()
 RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   v_wallet wallet_accounts%ROWTYPE;
 BEGIN
-  -- Collection: sale just became 'completed'
-  IF (TG_OP = 'UPDATE' AND NEW.status = 'completed' AND OLD.status <> 'completed')
-  OR (TG_OP = 'INSERT' AND NEW.status = 'completed') THEN
+  -- Collection: only when sale is paid + completed via mobile money.
+  IF (
+      (TG_OP = 'UPDATE' AND NEW.status = 'completed' AND OLD.status <> 'completed')
+      OR (TG_OP = 'INSERT' AND NEW.status = 'completed')
+    )
+    AND NEW.payment_method = 'mobile_money'
+    AND NEW.payment_status = 'paid' THEN
 
     -- Ensure wallet exists
     INSERT INTO wallet_accounts (business_id)
@@ -139,10 +143,12 @@ BEGIN
 
   END IF;
 
-  -- Reversal: sale was completed but now cancelled/refunded
+    -- Reversal: only for mobile-money collections previously credited to wallet
   IF TG_OP = 'UPDATE'
      AND OLD.status = 'completed'
-     AND NEW.status IN ('cancelled','refunded') THEN
+      AND NEW.status IN ('cancelled','refunded')
+      AND OLD.payment_method = 'mobile_money'
+      AND OLD.payment_status = 'paid' THEN
 
     SELECT * INTO v_wallet
     FROM wallet_accounts WHERE business_id = NEW.business_id;

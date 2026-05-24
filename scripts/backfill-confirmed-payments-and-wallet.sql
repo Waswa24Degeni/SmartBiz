@@ -87,7 +87,18 @@ set status = 'completed',
 where s.payment_method = 'cash'
   and (s.status <> 'completed' or s.payment_status <> 'paid');
 
--- 3) Backfill missing wallet collection transactions from completed sales
+-- 3) Remove wallet collection transactions that are not mobile-money paid sales
+delete from wallet_transactions tx
+using sales s
+where tx.type = 'collection'
+  and tx.reference = s.id::text
+  and (
+    s.payment_method <> 'mobile_money'
+    or s.payment_status <> 'paid'
+    or s.status <> 'completed'
+  );
+
+-- 4) Backfill missing wallet collection transactions from successful mobile-money sales
 --    (skip sales already represented by collection tx reference).
 insert into wallet_transactions (
   id,
@@ -122,9 +133,11 @@ left join wallet_transactions tx
   on tx.type = 'collection'
  and tx.reference = s.id::text
 where s.status = 'completed'
+  and s.payment_status = 'paid'
+  and s.payment_method = 'mobile_money'
   and tx.id is null;
 
--- 4) Recompute wallet totals by business
+-- 5) Recompute wallet totals by business
 --    (collection adds, refund/withdrawal subtracts)
 with agg as (
   select
@@ -146,7 +159,7 @@ set
 from agg a
 where w.business_id = a.business_id;
 
--- 5) Optional sanity checks (uncomment to inspect)
+-- 6) Optional sanity checks (uncomment to inspect)
 -- select count(*) as pending_subscriptions_after_fix from subscriptions where status = 'pending';
 -- select business_id, balance, total_collected, total_withdrawn from wallet_accounts order by updated_at desc;
 -- select count(*) as completed_sales_without_wallet_tx

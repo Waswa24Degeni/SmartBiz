@@ -8,7 +8,7 @@ import { BillsScreen } from './bills/BillsScreen';
 import { SettingsScreen } from './settings/SettingsScreen';
 import { Header } from '../components/common/Header';
 import { COLORS, BREAKPOINTS } from '../lib/constants';
-import { Category } from '../types';
+import { Category, Product } from '../types';
 import { MessagesScreen } from './messages/MessagesScreen';
 import { SupportScreen } from './support';
 import { POSScreen } from './pos';
@@ -16,6 +16,7 @@ import { ReportsScreen } from './reports';
 import { StaffScreen } from './staff/StaffScreen';
 import { CustomersScreen } from './customers';
 import { WalletScreen } from './wallet/WalletScreen';
+import { NotificationsScreen } from './notifications/NotificationsScreen';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 
@@ -53,12 +54,15 @@ export function MainLayout() {
   const { user, business } = useAuth();
   const [route, setRoute] = useState<Route>('Dashboard');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [billPrefillProduct, setBillPrefillProduct] = useState<Product | null>(null);
+  const [billPrefillNonce, setBillPrefillNonce] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [staffPerms, setStaffPerms] = useState<string[] | null>(null);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
+  const drawerWidth = Math.min(Math.max(width * 0.86, 240), 320);
 
   React.useEffect(() => {
     const loadStaffPerms = async () => {
@@ -138,6 +142,18 @@ export function MainLayout() {
     if (!hasAccess(next)) return;
     setRoute(next);
     setSelectedCategory(null);
+    if (next !== 'Bills') {
+      setBillPrefillProduct(null);
+    }
+    setDrawerOpen(false);
+  };
+
+  const handleInventoryAddToOrder = (product: Product) => {
+    if (!hasAccess('Bills')) return;
+    setBillPrefillProduct(product);
+    setBillPrefillNonce((n) => n + 1);
+    setRoute('Bills');
+    setSelectedCategory(null);
     setDrawerOpen(false);
   };
 
@@ -154,10 +170,11 @@ export function MainLayout() {
           <CategoryItemsScreen
             category={selectedCategory}
             onBack={() => setSelectedCategory(null)}
+            onAddToOrder={handleInventoryAddToOrder}
           />
         );
       case 'Bills':
-        return <BillsScreen />;
+        return <BillsScreen prefillProduct={billPrefillProduct} prefillNonce={billPrefillNonce} />;
       case 'POS':
         return <POSScreen />;
       case 'Reports':
@@ -171,7 +188,7 @@ export function MainLayout() {
       case 'Messages':
         return <MessagesScreen />;
       case 'Notifications':
-        return <PlaceholderScreen title="Notifications" icon="notifications-outline" />;
+        return <NotificationsScreen />;
       case 'Support':
         return <SupportScreen />;
       case 'Staff':
@@ -204,7 +221,7 @@ export function MainLayout() {
             activeOpacity={1}
             onPress={() => setDrawerOpen(false)}
           />
-          <View style={styles.drawer}>
+          <View style={[styles.drawer, { width: drawerWidth }]}>
             <Sidebar activeRoute={route} onNavigate={handleNavigate} navItems={allowedNavItems} />
           </View>
         </>
@@ -217,6 +234,8 @@ export function MainLayout() {
           breadcrumbs={getBreadcrumbs()}
           onBack={canGoBack ? handleBack : undefined}
           onMenuPress={isMobile ? () => setDrawerOpen(true) : undefined}
+          onNotificationsPress={() => setRoute('Notifications')}
+          onActivityPress={() => setRoute('Bills')}
           rightActions={!isMobile ? (
             <TouchableOpacity
               style={styles.desktopCollapseBtn}
@@ -278,12 +297,12 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     bottom: 0,
-    width: 260,
     zIndex: 20,
   },
   main: {
     flex: 1,
     backgroundColor: COLORS.background,
+    minWidth: 0,
   },
   content: {
     flex: 1,

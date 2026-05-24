@@ -44,6 +44,7 @@ export function CategoriesScreen({ onCategorySelect }: Props) {
   const { business } = useAuth();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
+  const isCompact = width < 520;
   const numColumns = isMobile ? 2 : width < BREAKPOINTS.desktop ? 3 : 4;
   const gridHorizontalPadding = SPACING.base;
   const cardOuterGap = SPACING.sm * 2;
@@ -166,7 +167,7 @@ export function CategoriesScreen({ onCategorySelect }: Props) {
   return (
     <View style={styles.container}>
       {/* Search bar */}
-      <View style={styles.searchBar}>
+      <View style={[styles.searchBar, isCompact && styles.searchBarCompact]}>
         <Ionicons name="search-outline" size={18} color={COLORS.textMuted} />
         <TextInput
           style={styles.searchInput}
@@ -177,17 +178,17 @@ export function CategoriesScreen({ onCategorySelect }: Props) {
         />
       </View>
 
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, isCompact && styles.topBarCompact]}>
         <View>
-          <Text style={styles.title}>Categories ({categories.length})</Text>
+          <Text style={[styles.title, isCompact && styles.titleCompact]}>Categories ({categories.length})</Text>
           <Text style={styles.posHint}>{posLabel}</Text>
         </View>
-        <View style={styles.topActions}>
-          <TouchableOpacity style={styles.seedBtn} onPress={handleQuickSetup}>
+        <View style={[styles.topActions, isCompact && styles.topActionsCompact]}>
+          <TouchableOpacity style={[styles.seedBtn, isCompact && styles.seedBtnCompact]} onPress={handleQuickSetup}>
             <Ionicons name="sparkles-outline" size={14} color={COLORS.primary} />
             <Text style={styles.seedBtnText}>Quick Setup</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
+          <TouchableOpacity style={[styles.addBtn, isCompact && styles.addBtnCompact]} onPress={openAdd}>
             <Ionicons name="add" size={20} color={COLORS.white} />
           </TouchableOpacity>
         </View>
@@ -244,9 +245,9 @@ export function CategoriesScreen({ onCategorySelect }: Props) {
       )}
 
       {/* Add / Edit modal */}
-      <Modal visible={modalVisible} transparent animationType="fade">
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
+          <View style={[styles.modalBox, isCompact && styles.modalBoxCompact]}>
             <Text style={styles.modalTitle}>{editingCategory ? 'Edit Category' : 'New Category'}</Text>
             <TextInput
               style={styles.modalInput}
@@ -257,7 +258,7 @@ export function CategoriesScreen({ onCategorySelect }: Props) {
               autoFocus
               onSubmitEditing={handleSave}
             />
-            <View style={styles.modalBtns}>
+            <View style={[styles.modalBtns, isCompact && styles.modalBtnsCompact]}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
                 onPress={() => setModalVisible(false)}
@@ -289,15 +290,26 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface, borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
     margin: SPACING.base, ...SHADOWS.sm,
+    minHeight: 44,
+  },
+  searchBarCompact: {
+    marginHorizontal: SPACING.md,
   },
   searchInput: { flex: 1, marginLeft: SPACING.sm, fontSize: FONTS.sizes.base, color: COLORS.text },
   topBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: SPACING.base, marginBottom: SPACING.md,
   },
+  topBarCompact: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+  },
   title: { fontSize: FONTS.sizes['2xl'], fontWeight: '700', color: COLORS.text },
+  titleCompact: { fontSize: FONTS.sizes.xl },
   posHint: { marginTop: 2, fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
   topActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
+  topActionsCompact: { width: '100%' },
   seedBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -308,11 +320,21 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
+    minHeight: 40,
+  },
+  seedBtnCompact: {
+    flex: 1,
+    justifyContent: 'center',
   },
   seedBtnText: { color: COLORS.primary, fontSize: FONTS.sizes.xs, fontWeight: '700' },
   addBtn: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: COLORS.accent, alignItems: 'center', justifyContent: 'center',
+  },
+  addBtnCompact: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   grid: { paddingHorizontal: SPACING.base, paddingBottom: 40 },
   categoryCard: {
@@ -337,6 +359,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface, borderRadius: RADIUS.lg,
     padding: SPACING.xl, width: '90%', maxWidth: 400,
   },
+  modalBoxCompact: {
+    width: '94%',
+    padding: SPACING.base,
+  },
   modalTitle: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.lg },
   modalInput: {
     borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.md,
@@ -344,14 +370,17 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sizes.base, color: COLORS.text, marginBottom: SPACING.lg,
   },
   modalBtns: { flexDirection: 'row', gap: SPACING.md },
+  modalBtnsCompact: { flexDirection: 'column' },
   modalCancelBtn: {
     flex: 1, padding: SPACING.md, borderRadius: RADIUS.md,
     borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',
+    minHeight: 44,
   },
   modalCancelText: { color: COLORS.textSecondary, fontSize: FONTS.sizes.base, fontWeight: '600' },
   modalSaveBtn: {
     flex: 1, padding: SPACING.md, borderRadius: RADIUS.md,
     backgroundColor: COLORS.accent, alignItems: 'center',
+    minHeight: 44,
   },
   modalSaveText: { color: COLORS.white, fontSize: FONTS.sizes.base, fontWeight: '600' },
 });

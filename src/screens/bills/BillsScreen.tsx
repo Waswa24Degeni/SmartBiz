@@ -62,11 +62,17 @@ const PAYMENT_METHODS = [
 
 const STATUSES = ['All', 'active', 'completed', 'cancelled'];
 
-export function BillsScreen() {
+interface BillsScreenProps {
+  prefillProduct?: Product | null;
+  prefillNonce?: number;
+}
+
+export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsScreenProps) {
   const { user, business } = useAuth();
   const { currency } = useSettings();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
+  const isCompact = width < 520;
   const isTablet = width >= BREAKPOINTS.tablet && width < BREAKPOINTS.desktop;
   const isDesktop = width >= BREAKPOINTS.desktop;
   const showSplit = !isMobile;
@@ -103,6 +109,7 @@ export function BillsScreen() {
   const [itemSearch, setItemSearch] = useState('');
   const [itemQty, setItemQty] = useState<Record<string, number>>({});
   const [savingItems, setSavingItems] = useState(false);
+  const [loadingPrefill, setLoadingPrefill] = useState(false);
 
   const fetchSales = useCallback(async (silent = false) => {
     if (!business?.id) {
@@ -387,28 +394,69 @@ export function BillsScreen() {
   };
 
   const handleCancel = (sale: Sale) => {
-    Alert.alert('Cancel Order', `Cancel order ${sale.order_number}?`, [
-      { text: 'No', style: 'cancel' },
-      {
-        text: 'Cancel Order',
-        style: 'destructive',
-        onPress: async () => {
-          setActing(true);
-          try {
-            const { error } = await supabase
-              .from('sales')
-              .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-              .eq('id', sale.id);
-            if (error) Alert.alert('Error', error.message);
-            else fetchSales(true);
-          } catch (e: any) {
-            Alert.alert('Error', e?.message ?? 'Unexpected error');
-          } finally {
-            setActing(false);
-          }
-        },
-      },
-    ]);
+    setActing(true);
+    (async () => {
+      try {
+        const { error } = await supabase
+          .from('sales')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .eq('id', sale.id);
+
+        if (error) {
+          Alert.alert('Error', error.message);
+          return;
+        }
+
+        await fetchSales(true);
+        if (selectedSale?.id === sale.id) {
+          setDetailVisible(false);
+        }
+        Alert.alert('Order cancelled', `${sale.order_number} has been cancelled.`);
+      } catch (e: any) {
+        Alert.alert('Error', e?.message ?? 'Unexpected error');
+      } finally {
+        setActing(false);
+      }
+    })();
+  };
+
+  const handleClearOrder = (sale: Sale) => {
+    setActing(true);
+    (async () => {
+      try {
+        const { error: deleteErr } = await supabase
+          .from('sale_items')
+          .delete()
+          .eq('sale_id', sale.id);
+
+        if (deleteErr) {
+          Alert.alert('Error', deleteErr.message);
+          return;
+        }
+
+        const { error: saleErr } = await supabase
+          .from('sales')
+          .update({
+            subtotal: 0,
+            discount: 0,
+            total: 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', sale.id);
+
+        if (saleErr) {
+          Alert.alert('Error', saleErr.message);
+          return;
+        }
+
+        await fetchSales(true);
+        Alert.alert('Order cleared', `${sale.order_number} is now empty.`);
+      } catch (e: any) {
+        Alert.alert('Error', e?.message ?? 'Could not clear order.');
+      } finally {
+        setActing(false);
+      }
+    })();
   };
 
   const handleCreateOrder = async () => {
@@ -517,6 +565,132 @@ export function BillsScreen() {
     setAddItemVisible(false);
     fetchSales(true);
   };
+
+  const resolveActiveSale = useCallback(async () => {
+    if (!business?.id || !user?.id) return null;
+
+    const inMemoryActive = sales.find((sale) => sale.status === 'active')
+      || (selectedSale?.status === 'active' ? selectedSale : null);
+    if (inMemoryActive) return inMemoryActive;
+
+    const { data: latestActive } = await supabase
+      .from('sales')
+      .select('*, items:sale_items(*, product:products(id, name, selling_price)), customer:customers(id, full_name, phone)')
+      .eq('business_id', business.id)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestActive) return latestActive as Sale;
+
+    const orderNumber = `ORD-${Date.now().toString().slice(-5)}`;
+    const { data: newSale } = await supabase
+      .from('sales')
+      .insert({
+        business_id: business.id,
+        cashier_id: user.id,
+        order_number: orderNumber,
+        guests: 1,
+        status: 'active',
+        subtotal: 0,
+        discount: 0,
+        total: 0,
+        payment_status: 'pending',
+        payment_method: 'cash',
+      })
+      .select('*, items:sale_items(*, product:products(id, name, selling_price)), customer:customers(id, full_name, phone)')
+      .single();
+
+    return (newSale as Sale) ?? null;
+  }, [business?.id, user?.id, sales, selectedSale]);
+
+  const addPrefillProductToOrder = useCallback(async (product: Product) => {
+    if (!business?.id || !user?.id) return;
+    setLoadingPrefill(true);
+    try {
+      const targetSale = await resolveActiveSale();
+      if (!targetSale?.id) {
+        Alert.alert('Order error', 'Could not load or create an active order.');
+        return;
+      }
+
+      const { data: existingItems } = await supabase
+        .from('sale_items')
+        .select('id, quantity, total, discount')
+        .eq('sale_id', targetSale.id)
+        .eq('product_id', product.id)
+        .limit(1);
+
+      const current = existingItems?.[0] as any;
+
+      if (current?.id) {
+        const nextQty = Number(current.quantity ?? 0) + 1;
+        const nextTotal = nextQty * Number(product.selling_price);
+        const { error: updateItemErr } = await supabase
+          .from('sale_items')
+          .update({ quantity: nextQty, total: nextTotal })
+          .eq('id', current.id);
+        if (updateItemErr) throw new Error(updateItemErr.message);
+      } else {
+        const { error: insertErr } = await supabase
+          .from('sale_items')
+          .insert({
+            sale_id: targetSale.id,
+            product_id: product.id,
+            quantity: 1,
+            unit_price: product.selling_price,
+            discount: 0,
+            total: product.selling_price,
+          });
+        if (insertErr) throw new Error(insertErr.message);
+      }
+
+      const { data: totalsData, error: totalsErr } = await supabase
+        .from('sale_items')
+        .select('quantity, unit_price, discount')
+        .eq('sale_id', targetSale.id);
+      if (totalsErr) throw new Error(totalsErr.message);
+
+      const subtotal = (totalsData ?? []).reduce((sum: number, row: any) => (
+        sum + Number(row.quantity || 0) * Number(row.unit_price || 0)
+      ), 0);
+      const discount = (totalsData ?? []).reduce((sum: number, row: any) => (
+        sum + Number(row.discount || 0)
+      ), 0);
+
+      const { error: saleUpdateErr } = await supabase
+        .from('sales')
+        .update({
+          subtotal,
+          total: Math.max(0, subtotal - discount),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', targetSale.id);
+      if (saleUpdateErr) throw new Error(saleUpdateErr.message);
+
+      const { data: refreshedSale } = await supabase
+        .from('sales')
+        .select('*, items:sale_items(*, product:products(id, name, selling_price)), customer:customers(id, full_name, phone)')
+        .eq('id', targetSale.id)
+        .maybeSingle();
+
+      const activeSale = (refreshedSale as Sale) ?? targetSale;
+
+      await fetchSales(true);
+      setSelectedSale(activeSale);
+      if (isMobile) setDetailVisible(true);
+    } catch (e: any) {
+      Alert.alert('Order update failed', e?.message ?? 'Could not add product to order.');
+    } finally {
+      setLoadingPrefill(false);
+    }
+  }, [business?.id, user?.id, resolveActiveSale, fetchSales, isMobile]);
+
+  useEffect(() => {
+    if (!prefillProduct || !prefillNonce) return;
+    addPrefillProductToOrder(prefillProduct);
+  }, [prefillProduct, prefillNonce, addPrefillProductToOrder]);
 
   const escapeHtml = (value: string) => value
     .replace(/&/g, '&amp;')
@@ -764,7 +938,7 @@ export function BillsScreen() {
           </View>
         </View>
 
-        <View style={styles.metaGrid}>
+        <View style={[styles.metaGrid, isCompact && styles.metaGridCompact]}>
           {[
             { icon: 'grid-outline', label: 'Table', value: sale.table_number ?? '—' },
             { icon: 'people-outline', label: 'Guests', value: String(sale.guests ?? 1) },
@@ -785,12 +959,12 @@ export function BillsScreen() {
           ))}
         </View>
 
-        <View style={styles.sectionHeader}>
+        <View style={[styles.sectionHeader, isCompact && styles.sectionHeaderCompact]}>
           <Text style={styles.sectionTitle}>Items</Text>
           {isActive && (
             <TouchableOpacity style={styles.addItemBtn} onPress={() => openAddItems(sale)}>
               <Ionicons name="add" size={13} color={COLORS.accent} />
-              <Text style={styles.addItemBtnText}>Add Items</Text>
+              <Text style={styles.addItemBtnText}>Load Order</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -823,7 +997,7 @@ export function BillsScreen() {
             {isActive && (
               <TouchableOpacity style={styles.addItemBtn} onPress={() => openAddItems(sale)}>
                 <Ionicons name="add" size={13} color={COLORS.accent} />
-                <Text style={styles.addItemBtnText}>Add Items</Text>
+                <Text style={styles.addItemBtnText}>Load Order</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -857,17 +1031,27 @@ export function BillsScreen() {
               <Text style={styles.docBtnText}>Generate Proforma Invoice</Text>
             </TouchableOpacity>
 
-            <View style={styles.actionBtns}>
+            <View style={[styles.actionBtns, isCompact && styles.actionBtnsCompact]}>
+              {isActive && (
+                <TouchableOpacity
+                  style={[styles.clearBtn, isCompact && styles.clearBtnCompact, acting && { opacity: 0.6 }]}
+                  onPress={() => handleClearOrder(sale)}
+                  disabled={acting}
+                >
+                  <Ionicons name="trash-outline" size={16} color={COLORS.warning} />
+                  <Text style={styles.clearBtnText}>Clear Order</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
-                style={[styles.cancelBtn, acting && { opacity: 0.6 }]}
+                style={[styles.cancelBtn, isCompact && styles.cancelBtnCompact, acting && { opacity: 0.6 }]}
                 onPress={() => handleCancel(sale)}
                 disabled={acting}
               >
                 <Ionicons name="close-circle-outline" size={16} color={COLORS.error} />
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>Cancel Order</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.chargeBtn, acting && { opacity: 0.6 }]}
+                style={[styles.chargeBtn, isCompact && styles.chargeBtnCompact, acting && { opacity: 0.6 }]}
                 onPress={() => openCharge(sale)}
                 disabled={acting}
               >
@@ -1122,7 +1306,7 @@ export function BillsScreen() {
         )}
       </View>
 
-      <Modal visible={isMobile && detailVisible} transparent animationType="slide">
+      <Modal visible={isMobile && detailVisible} transparent animationType="slide" onRequestClose={() => setDetailVisible(false)}>
         <View style={styles.overlay}>
           <TouchableOpacity style={{ flex: 1 }} onPress={() => setDetailVisible(false)} />
           <View style={styles.mobileSheet}>
@@ -1139,7 +1323,7 @@ export function BillsScreen() {
         </View>
       </Modal>
 
-      <Modal visible={newOrderVisible} transparent animationType="fade">
+      <Modal visible={newOrderVisible} transparent animationType="fade" onRequestClose={() => setNewOrderVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
@@ -1196,7 +1380,7 @@ export function BillsScreen() {
                 </View>
               </View>
 
-              <View style={styles.modalBtns}>
+              <View style={[styles.modalBtns, isCompact && styles.modalBtnsMobile]}>
                 <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setNewOrderVisible(false)}>
                   <Text style={styles.modalCancelText}>Cancel</Text>
                 </TouchableOpacity>
@@ -1217,7 +1401,7 @@ export function BillsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal visible={chargeVisible} transparent animationType="fade">
+      <Modal visible={chargeVisible} transparent animationType="fade" onRequestClose={() => setChargeVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
@@ -1333,7 +1517,7 @@ export function BillsScreen() {
                 </>
               )}
 
-              <View style={styles.modalBtns}>
+              <View style={[styles.modalBtns, isCompact && styles.modalBtnsMobile]}>
                 <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setChargeVisible(false)}>
                   <Text style={styles.modalCancelText}>Cancel</Text>
                 </TouchableOpacity>
@@ -1357,7 +1541,7 @@ export function BillsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal visible={addItemVisible} transparent animationType="slide">
+      <Modal visible={addItemVisible} transparent animationType="slide" onRequestClose={() => setAddItemVisible(false)}>
         <View style={styles.overlay}>
           <TouchableOpacity style={{ flex: 1 }} onPress={() => setAddItemVisible(false)} />
           <View style={[styles.mobileSheet, { maxHeight: '80%' }]}>
@@ -1380,7 +1564,7 @@ export function BillsScreen() {
               />
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, marginBottom: SPACING.md }}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ flex: 1, marginBottom: SPACING.md }}>
               {filteredProducts.length === 0 && (
                 <Text style={[styles.emptyItemsText, { marginTop: SPACING.xl }]}>No products found</Text>
               )}
@@ -1687,6 +1871,9 @@ const styles = StyleSheet.create({
   orderTime: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 2 },
 
   metaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.md },
+  metaGridCompact: {
+    flexDirection: 'column',
+  },
   metaCell: {
     flex: 1,
     minWidth: 90,
@@ -1719,6 +1906,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.sm,
   },
+  sectionHeaderCompact: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: SPACING.xs,
+  },
   sectionTitle: {
     fontSize: FONTS.sizes.xs,
     fontWeight: '700',
@@ -1734,6 +1926,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     paddingVertical: 4,
     paddingHorizontal: SPACING.sm,
+    minHeight: 40,
   },
   addItemBtnText: { fontSize: FONTS.sizes.xs, color: COLORS.accent, fontWeight: '600' },
 
@@ -1824,6 +2017,27 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     marginBottom: SPACING.lg,
   },
+  actionBtnsCompact: {
+    flexDirection: 'column',
+  },
+  clearBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderColor: COLORS.warning,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.md,
+    backgroundColor: COLORS.warning + '10',
+    minHeight: 44,
+  },
+  clearBtnText: { color: COLORS.warning, fontWeight: '600', fontSize: FONTS.sizes.sm },
+  clearBtnCompact: {
+    width: '100%',
+    flex: 0,
+  },
   cancelBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -1834,8 +2048,13 @@ const styles = StyleSheet.create({
     borderColor: COLORS.error,
     borderRadius: RADIUS.md,
     paddingVertical: SPACING.md,
+    minHeight: 44,
   },
   cancelBtnText: { color: COLORS.error, fontWeight: '600', fontSize: FONTS.sizes.sm },
+  cancelBtnCompact: {
+    width: '100%',
+    flex: 0,
+  },
   chargeBtn: {
     flex: 2,
     flexDirection: 'row',
@@ -1845,8 +2064,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accent,
     borderRadius: RADIUS.md,
     paddingVertical: SPACING.md,
+    minHeight: 44,
   },
   chargeBtnText: { color: COLORS.white, fontSize: FONTS.sizes.sm, fontWeight: '700' },
+  chargeBtnCompact: {
+    width: '100%',
+    flex: 0,
+  },
 
   doneBanner: {
     flexDirection: 'row',
@@ -1966,6 +2190,7 @@ const styles = StyleSheet.create({
   },
 
   modalBtns: { flexDirection: 'row', gap: SPACING.md, marginTop: SPACING.sm },
+  modalBtnsMobile: { flexDirection: 'column' },
   modalCancelBtn: {
     flex: 1,
     padding: SPACING.md,
@@ -1973,6 +2198,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     alignItems: 'center',
+    minHeight: 44,
   },
   modalCancelText: { color: COLORS.textSecondary, fontWeight: '600' },
   modalSaveBtn: {
@@ -1981,6 +2207,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.accent,
     alignItems: 'center',
+    minHeight: 44,
   },
   modalSaveText: { color: COLORS.white, fontWeight: '700' },
 

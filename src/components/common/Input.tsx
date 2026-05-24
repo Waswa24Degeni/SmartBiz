@@ -121,6 +121,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
+    minHeight: 44,
   },
   inputWrapFocused: {
     backgroundColor: COLORS.surfaceHover,
@@ -139,6 +140,10 @@ const styles = StyleSheet.create({
   },
   rightIcon: {
     padding: SPACING.xs,
+    minWidth: 40,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   errorText: {
     fontSize: FONTS.sizes.xs,

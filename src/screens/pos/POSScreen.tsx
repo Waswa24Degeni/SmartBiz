@@ -53,6 +53,7 @@ export function POSScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
+  const [productView, setProductView] = useState<'cards' | 'compact'>('cards');
   const [processingSale, setProcessingSale] = useState(false);
   const [mobilePane, setMobilePane] = useState<'products' | 'cart'>('products');
   const [productsPaneWidth, setProductsPaneWidth] = useState(0);
@@ -87,12 +88,104 @@ export function POSScreen() {
     ]);
   };
 
-  const handleAddToOrder = () => {
-    if (isMobile) {
-      setMobilePane('products');
-      return;
+  const persistSale = useCallback(async ({
+    status,
+    paymentStatus,
+    paymentMethod,
+    mobilePhone,
+    payerName,
+  }: {
+    status: 'active' | 'completed';
+    paymentStatus: 'pending' | 'paid';
+    paymentMethod: 'cash' | 'mobile_money';
+    mobilePhone?: string | null;
+    payerName?: string | null;
+  }) => {
+    if (!business?.id || !user?.id) {
+      throw new Error('Missing business or user context. Please sign in again.');
     }
-    Alert.alert('Add to Order', 'Select products from the list, then return to checkout.');
+    if (!items.length) {
+      throw new Error('Add products before continuing.');
+    }
+
+    const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
+
+    const { data: sale, error: saleError } = await supabase
+      .from('sales')
+      .insert({
+        business_id: business.id,
+        customer_id: selectedCustomerId,
+        cashier_id: user.id,
+        order_number: orderNumber,
+        status,
+        subtotal,
+        discount: totalDiscount,
+        total,
+        payment_status: paymentStatus,
+        payment_method: paymentMethod,
+        mobile_phone: mobilePhone ?? null,
+        payer_name: payerName ?? null,
+      })
+      .select('id')
+      .single();
+
+    if (saleError || !sale?.id) {
+      throw new Error(saleError?.message || 'Unable to create sale record.');
+    }
+
+    const rows = items.map((i) => ({
+      sale_id: sale.id,
+      product_id: i.product.id,
+      quantity: i.quantity,
+      unit_price: i.product.selling_price,
+      discount: i.discount * i.quantity,
+      total: i.quantity * i.product.selling_price - i.discount * i.quantity,
+    }));
+
+    const { error: itemsError } = await supabase.from('sale_items').insert(rows);
+    if (itemsError) {
+      throw new Error(itemsError.message);
+    }
+
+    for (const item of items) {
+      const newStock = Math.max(0, item.product.stock_quantity - item.quantity);
+      const { error: stockError } = await supabase
+        .from('products')
+        .update({ stock_quantity: newStock })
+        .eq('id', item.product.id);
+      if (stockError) {
+        throw new Error(stockError.message);
+      }
+    }
+
+    return { orderNumber };
+  }, [business?.id, user?.id, items, selectedCustomerId, subtotal, totalDiscount, total]);
+
+  const handleHoldOrder = async () => {
+    setProcessingSale(true);
+    try {
+      const { orderNumber } = await persistSale({
+        status: 'active',
+        paymentStatus: 'pending',
+        paymentMethod: payMethod,
+        mobilePhone: payMethod === 'mobile_money' ? mobilePhone.trim() || null : null,
+        payerName: payMethod === 'mobile_money' ? payerName.trim() || null : null,
+      });
+
+      clearCart();
+      setSelectedCustomerId(null);
+      setCustomerSearch('');
+      setCheckoutVisible(false);
+      setCashReceived('');
+      setMobilePhone('');
+      setPayerName('');
+      Alert.alert('Order saved', `Order ${orderNumber} is ready for later payment.`);
+      fetchProducts();
+    } catch (e: any) {
+      Alert.alert('Save order error', e?.message ?? 'Could not save this order.');
+    } finally {
+      setProcessingSale(false);
+    }
   };
 
   const fetchProducts = useCallback(async (silent = false) => {
@@ -228,58 +321,24 @@ export function POSScreen() {
 
     setProcessingSale(true);
     try {
-      const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
-
-      const { data: sale, error: saleError } = await supabase
-        .from('sales')
-        .insert({
-          business_id: business.id,
-          customer_id: selectedCustomerId,
-          cashier_id: user.id,
-          order_number: orderNumber,
-          status: payMethod === 'cash' ? 'completed' : 'active',
-          subtotal,
-          discount: totalDiscount,
-          total,
-          payment_status: payMethod === 'cash' ? 'paid' : 'pending',
-          payment_method: payMethod,
-          mobile_phone: payMethod === 'mobile_money' ? mobilePhone.trim() : null,
-          payer_name:   payMethod === 'mobile_money' ? payerName.trim()   : null,
-        })
-        .select('id')
-        .single();
-
-      if (saleError || !sale?.id) {
-        throw new Error(saleError?.message || 'Unable to create sale record.');
-      }
-
-      const rows = items.map((i) => ({
-        sale_id: sale.id,
-        product_id: i.product.id,
-        quantity: i.quantity,
-        unit_price: i.product.selling_price,
-        discount: i.discount * i.quantity,
-        total: i.quantity * i.product.selling_price - i.discount * i.quantity,
-      }));
-
-      const { error: itemsError } = await supabase.from('sale_items').insert(rows);
-      if (itemsError) throw new Error(itemsError.message);
-
-      for (const item of items) {
-        const newStock = Math.max(0, item.product.stock_quantity - item.quantity);
-        const { error: stockError } = await supabase
-          .from('products')
-          .update({ stock_quantity: newStock })
-          .eq('id', item.product.id);
-        if (stockError) throw new Error(stockError.message);
-      }
+      const { orderNumber } = await persistSale({
+        status: payMethod === 'cash' ? 'completed' : 'active',
+        paymentStatus: payMethod === 'cash' ? 'paid' : 'pending',
+        paymentMethod: payMethod,
+        mobilePhone: payMethod === 'mobile_money' ? mobilePhone.trim() || null : null,
+        payerName: payMethod === 'mobile_money' ? payerName.trim() || null : null,
+      });
 
       clearCart();
       setSelectedCustomerId(null);
       setCheckoutVisible(false);
+      setCustomerSearch('');
+      setCashReceived('');
+      setMobilePhone('');
+      setPayerName('');
       const change = payMethod === 'cash' ? cashChange : 0;
       Alert.alert(
-        'Sale Complete',
+        payMethod === 'cash' ? 'Payment Confirmed' : 'Payment Requested',
         payMethod === 'cash'
           ? `Sale ${orderNumber} recorded.\nChange: ${currency} ${change.toLocaleString()}`
           : `Sale ${orderNumber} recorded.\nMobile money request sent to ${mobilePhone.trim()}.`,
@@ -425,6 +484,23 @@ export function POSScreen() {
             </View>
           )}
 
+          <View style={styles.productViewSwitchRow}>
+            <Pressable
+              style={[styles.productViewSwitchBtn, productView === 'cards' && styles.productViewSwitchBtnActive]}
+              onPress={() => setProductView('cards')}
+            >
+              <Ionicons name="grid-outline" size={14} color={productView === 'cards' ? COLORS.white : COLORS.textSecondary} />
+              <Text style={[styles.productViewSwitchText, productView === 'cards' && styles.productViewSwitchTextActive]}>Cards</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.productViewSwitchBtn, productView === 'compact' && styles.productViewSwitchBtnActive]}
+              onPress={() => setProductView('compact')}
+            >
+              <Ionicons name="list-outline" size={14} color={productView === 'compact' ? COLORS.white : COLORS.textSecondary} />
+              <Text style={[styles.productViewSwitchText, productView === 'compact' && styles.productViewSwitchTextActive]}>Compact</Text>
+            </Pressable>
+          </View>
+
           {loading ? (
             <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
           ) : (
@@ -443,6 +519,34 @@ export function POSScreen() {
                   const colorPalette = ['#1B3A2D', '#C49A2A', '#2563EB', '#059669', '#D97706', '#DC2626'];
                   const dotColor = colorPalette[p.name.charCodeAt(0) % colorPalette.length];
                   const lowStock = p.stock_quantity <= Math.max(1, p.low_stock_threshold ?? 0);
+
+                  if (productView === 'compact') {
+                    return (
+                      <Pressable
+                        key={p.id}
+                        style={({ pressed }) => [
+                          styles.compactProductRow,
+                          pressed && styles.productCardPressed,
+                        ]}
+                        onPress={() => addItem(p)}
+                      >
+                        <View style={[styles.compactProductDot, { backgroundColor: dotColor + '18', borderColor: dotColor + '35' }]}>
+                          <Text style={[styles.compactProductDotText, { color: dotColor }]}>{initial}</Text>
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.compactProductName} numberOfLines={1}>{p.name}</Text>
+                          <Text style={styles.compactProductMeta} numberOfLines={1}>{p.category?.name ?? 'General'}</Text>
+                        </View>
+                        <View style={styles.compactProductRight}>
+                          <Text style={styles.compactProductPrice}>{currency} {Number(p.selling_price).toLocaleString()}</Text>
+                          <Text style={[styles.compactProductStock, lowStock && styles.compactProductStockLow]}>
+                            {p.stock_quantity} {p.unit}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  }
+
                   return (
                     <Pressable
                       key={p.id}
@@ -490,7 +594,7 @@ export function POSScreen() {
                             end={{ x: 1, y: 1 }}
                           />
                           <Ionicons name="add" size={14} color={COLORS.white} />
-                          <Text style={styles.addBtnText}>Add to Order</Text>
+                          <Text style={styles.addBtnText}>Add to Cart</Text>
                         </View>
                       </View>
                     </Pressable>
@@ -592,10 +696,10 @@ export function POSScreen() {
               styles.addToOrderBtn,
               pressed && styles.addToOrderBtnPressed,
             ]}
-            onPress={handleAddToOrder}
+            onPress={handleHoldOrder}
           >
             <Ionicons name="add-circle-outline" size={16} color={COLORS.primary} />
-            <Text style={styles.addToOrderText}>Add to Order</Text>
+            <Text style={styles.addToOrderText}>Hold Order</Text>
           </Pressable>
 
           <Pressable
@@ -627,12 +731,12 @@ export function POSScreen() {
       </View>
 
       {/* ── Checkout Payment Modal ──────────────────────────── */}
-      <Modal visible={checkoutVisible} transparent animationType="fade">
+      <Modal visible={checkoutVisible} transparent animationType="fade" onRequestClose={() => setCheckoutVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Payment</Text>
+                <Text style={styles.modalTitle}>Confirm Payment</Text>
                 <TouchableOpacity onPress={() => setCheckoutVisible(false)} style={styles.modalCloseBtn}>
                   <Ionicons name="close" size={20} color={COLORS.textSecondary} />
                 </TouchableOpacity>
@@ -761,7 +865,9 @@ export function POSScreen() {
                   {processingSale ? (
                     <ActivityIndicator color={COLORS.white} size="small" />
                   ) : (
-                    <Text style={styles.modalSaveText}>Confirm Payment</Text>
+                    <Text style={styles.modalSaveText}>
+                      {payMethod === 'cash' ? 'Confirm Payment' : 'Send Payment Request'}
+                    </Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -849,6 +955,37 @@ const styles = StyleSheet.create({
   categoryChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   categoryChipText: { color: COLORS.textSecondary, fontSize: FONTS.sizes.xs, fontWeight: '600' },
   categoryChipTextActive: { color: COLORS.white },
+  productViewSwitchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.base,
+    paddingBottom: SPACING.sm,
+  },
+  productViewSwitchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    minHeight: 34,
+  },
+  productViewSwitchBtnActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  productViewSwitchText: {
+    color: COLORS.textSecondary,
+    fontSize: FONTS.sizes.xs,
+    fontWeight: '700',
+  },
+  productViewSwitchTextActive: {
+    color: COLORS.white,
+  },
   productsList: { paddingHorizontal: SPACING.base, paddingBottom: SPACING['2xl'], gap: SPACING.sm },
   productCard: {
     flexDirection: 'row',
@@ -1132,6 +1269,58 @@ const styles = StyleSheet.create({
   productCardPressed: {
     backgroundColor: COLORS.surfaceHover,
     transform: [{ scale: 0.98 }],
+  },
+  compactProductRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 52,
+  },
+  compactProductDot: {
+    width: 30,
+    height: 30,
+    borderRadius: RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    flexShrink: 0,
+  },
+  compactProductDotText: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '800',
+  },
+  compactProductName: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  compactProductMeta: {
+    marginTop: 1,
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textMuted,
+  },
+  compactProductRight: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  compactProductPrice: {
+    fontSize: FONTS.sizes.xs,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  compactProductStock: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.success,
+  },
+  compactProductStockLow: {
+    color: COLORS.error,
   },
   // Cart item redesign
   cartItemDot: {

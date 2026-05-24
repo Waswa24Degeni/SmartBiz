@@ -154,6 +154,8 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 44,
+    minWidth: 44,
     overflow: 'hidden',
   } as ViewStyle,
   gradientWrapper: {
@@ -166,6 +168,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
   },
   iconWrap: {
     marginRight: SPACING.xs + 2,
@@ -182,13 +185,14 @@ const styles = StyleSheet.create({
   text: {
     fontWeight: '600',
     letterSpacing: 0.1,
+    textAlign: 'center',
   } as TextStyle,
 });
 
 const sizeStyles: Record<Size, ViewStyle> = {
-  sm: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.xs + 2, borderRadius: RADIUS.sm },
-  md: { paddingHorizontal: SPACING.lg,   paddingVertical: SPACING.md - 1 },
-  lg: { paddingHorizontal: SPACING.xl,   paddingVertical: SPACING.base - 1 },
+  sm: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm + 1, borderRadius: RADIUS.sm },
+  md: { paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm + 3 },
+  lg: { paddingHorizontal: SPACING.xl, paddingVertical: SPACING.md + 1 },
 };
 
 const textSizeStyles: Record<Size, TextStyle> = {

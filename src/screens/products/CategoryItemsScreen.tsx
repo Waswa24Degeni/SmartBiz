@@ -34,23 +34,30 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 interface Props {
   category?: Category | null;
   onBack?: () => void;
+  onAddToOrder?: (product: Product) => void;
 }
 
-export function CategoryItemsScreen({ category = null, onBack }: Props) {
+export function CategoryItemsScreen({ category = null, onBack, onAddToOrder }: Props) {
   const { business } = useAuth();
   const { addItem, items } = useCart();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
+  const isCompact = width < 520;
+  const isNarrowPhone = width < 390;
+  const productColumns = isMobile ? (isNarrowPhone ? 1 : 2) : 3;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [mode, setMode] = useState<'category' | 'all'>(category?.id ? 'category' : 'all');
+  const [orderView, setOrderView] = useState<'all' | 'in_order'>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [importing, setImporting] = useState(false);
 
   // Detail modal on mobile
   const [detailVisible, setDetailVisible] = useState(false);
+  const [showDesktopDetail, setShowDesktopDetail] = useState(true);
 
   // CRUD modal
   const [crudVisible, setCrudVisible] = useState(false);
@@ -400,8 +407,13 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
       Alert.alert('Required', 'Product name is required');
       return;
     }
-    if (!business?.id) return;
+    if (!business?.id) {
+      Alert.alert('Unavailable', 'Missing business context. Please sign in again.');
+      return;
+    }
+
     setSaving(true);
+
     const payload = {
       name: form.name.trim(),
       description: form.description.trim() || null,
@@ -410,9 +422,19 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
       stock_quantity: parseInt(form.stock_quantity) || 0,
       unit: form.unit.trim() || 'piece',
     };
+
     if (editingProduct) {
-      const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id);
-      if (error) Alert.alert('Error', error.message);
+      const { error } = await supabase
+        .from('products')
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq('id', editingProduct.id)
+        .eq('business_id', business.id);
+
+      if (error) {
+        setSaving(false);
+        Alert.alert('Update failed', error.message);
+        return;
+      }
     } else {
       const { error } = await supabase.from('products').insert({
         ...payload,
@@ -420,9 +442,17 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
         category_id: mode === 'category' && category?.id ? category.id : null,
         is_active: true,
       });
-      if (error) Alert.alert('Error', error.message);
+
+      if (error) {
+        setSaving(false);
+        Alert.alert('Create failed', error.message);
+        return;
+      }
     }
+
     setSaving(false);
+    setEditingProduct(null);
+    setForm(EMPTY_FORM);
     setCrudVisible(false);
     fetchProducts();
   };
@@ -430,22 +460,35 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
   const handleSelectProduct = (p: Product) => {
     setSelectedProduct(p);
     if (isMobile) setDetailVisible(true);
+    else setShowDesktopDetail(true);
   };
 
   const handleAddToOrder = (p: Product) => {
     addItem(p);
-    Alert.alert('Added', `${p.name} added to order`);
+    onAddToOrder?.(p);
   };
 
   const cartItem = (p: Product) => items.find(i => i.product.id === p.id);
 
-  const filteredProducts = products.filter((p) => {
+  const searchedProducts = products.filter((p) => {
     const q = search.toLowerCase();
     if (!q) return true;
     return p.name.toLowerCase().includes(q)
       || (p.description ?? '').toLowerCase().includes(q)
       || (p.barcode ?? '').toLowerCase().includes(q);
   });
+
+  const inOrderIds = new Set(
+    items
+      .filter((i) => i.quantity > 0)
+      .map((i) => i.product.id),
+  );
+
+  const filteredProducts = searchedProducts.filter((p) => (
+    orderView === 'all' || inOrderIds.has(p.id)
+  ));
+
+  const inOrderCount = inOrderIds.size;
 
   const productIcon = posType === 'pharmacy'
     ? 'medkit-outline'
@@ -462,7 +505,7 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
       <Text style={styles.detailName}>{p.name}</Text>
       <Text style={styles.detailWeight}>{p.description ?? ''}</Text>
       <Text style={styles.detailPrice}>TZS {p.selling_price.toLocaleString()}</Text>
-      <View style={styles.detailMeta}>
+      <View style={[styles.detailMeta, isCompact && styles.detailMetaCompact]}>
         <View style={styles.detailMetaItem}>
           <Text style={styles.detailMetaLabel}>Stock</Text>
           <Text style={[styles.detailMetaValue, p.stock_quantity <= p.low_stock_threshold && { color: COLORS.warning }]}>
@@ -474,7 +517,7 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
           <Text style={styles.detailMetaValue}>{p.unit}</Text>
         </View>
       </View>
-      <View style={styles.detailActions}>
+          <View style={[styles.detailActions, isCompact && styles.detailActionsMobile]}>
         <TouchableOpacity style={styles.detailEditBtn} onPress={() => { setDetailVisible(false); openEdit(p); }}>
           <Ionicons name="pencil-outline" size={16} color={COLORS.primary} />
           <Text style={styles.detailEditText}>Edit</Text>
@@ -495,40 +538,88 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
       <View style={styles.layout}>
         {/* Products grid */}
         <View style={styles.gridWrap}>
-          <View style={styles.gridHeader}>
-            <View style={{ flex: 1, marginRight: SPACING.sm }}>
+          <View style={[styles.gridHeader, isCompact && styles.gridHeaderMobile]}>
+            <View style={[styles.gridTitleWrap, isCompact && styles.gridTitleWrapCompact]}>
               <Text style={styles.gridTitle}>{mode === 'all' ? 'All Products' : (category?.name ?? 'Category')}</Text>
               <Text style={styles.gridSubTitle}>{posLabel}</Text>
             </View>
-            <View style={styles.headerActions}>
+            <View style={[styles.headerActions, isCompact && styles.headerActionsMobile]}>
               {!!category?.id && (
                 <TouchableOpacity
-                  style={[styles.modeBtn, mode === 'category' && styles.modeBtnActive]}
+                  style={[styles.modeBtn, isCompact && styles.modeBtnMobile, mode === 'category' && styles.modeBtnActive]}
                   onPress={() => setMode('category')}
                 >
-                  <Text style={[styles.modeBtnText, mode === 'category' && styles.modeBtnTextActive]}>Category</Text>
+                  <Text
+                    style={[styles.modeBtnText, mode === 'category' && styles.modeBtnTextActive]}
+                    numberOfLines={1}
+                  >
+                    Category
+                  </Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={[styles.modeBtn, mode === 'all' && styles.modeBtnActive]}
+                style={[styles.modeBtn, isCompact && styles.modeBtnMobile, mode === 'all' && styles.modeBtnActive]}
                 onPress={() => setMode('all')}
               >
-                <Text style={[styles.modeBtnText, mode === 'all' && styles.modeBtnTextActive]}>All</Text>
+                <Text
+                  style={[styles.modeBtnText, mode === 'all' && styles.modeBtnTextActive]}
+                  numberOfLines={1}
+                >
+                  All
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.importBtn, importing && { opacity: 0.65 }]}
+                style={[styles.modeBtn, isCompact && styles.modeBtnMobile, orderView === 'all' && styles.modeBtnActive]}
+                onPress={() => setOrderView('all')}
+              >
+                <Text
+                  style={[styles.modeBtnText, orderView === 'all' && styles.modeBtnTextActive]}
+                  numberOfLines={1}
+                >
+                  All Items
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeBtn, isCompact && styles.modeBtnMobile, orderView === 'in_order' && styles.modeBtnActive]}
+                onPress={() => setOrderView('in_order')}
+              >
+                <Text
+                  style={[styles.modeBtnText, orderView === 'in_order' && styles.modeBtnTextActive]}
+                  numberOfLines={1}
+                >
+                  In Order ({inOrderCount})
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.viewModeWrap}>
+                <TouchableOpacity
+                  style={[styles.viewModeBtn, viewMode === 'grid' && styles.viewModeBtnActive]}
+                  onPress={() => setViewMode('grid')}
+                >
+                  <Ionicons name="grid-outline" size={14} color={viewMode === 'grid' ? COLORS.white : COLORS.textSecondary} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.viewModeBtn, viewMode === 'list' && styles.viewModeBtnActive]}
+                  onPress={() => setViewMode('list')}
+                >
+                  <Ionicons name="list-outline" size={14} color={viewMode === 'list' ? COLORS.white : COLORS.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.importBtn, isCompact && styles.importBtnMobile, importing && { opacity: 0.65 }]}
                 onPress={handleImportProducts}
                 disabled={importing}
               >
                 {importing ? <ActivityIndicator color={COLORS.primary} size="small" /> : <Ionicons name="cloud-upload-outline" size={16} color={COLORS.primary} />}
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.templateBtn}
+                style={[styles.templateBtn, isCompact && styles.templateBtnMobile]}
                 onPress={handleDownloadTemplate}
               >
                 <Ionicons name="download-outline" size={16} color={COLORS.info} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
+              <TouchableOpacity style={[styles.addBtn, isCompact && styles.addBtnMobile]} onPress={openAdd}>
                 <Ionicons name="add" size={18} color={COLORS.white} />
               </TouchableOpacity>
             </View>
@@ -545,12 +636,24 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
             />
           </View>
 
+          <Text style={styles.orderHint}>
+            {orderView === 'in_order'
+              ? 'Showing products already added to order.'
+              : `Products currently in order: ${inOrderCount}`}
+          </Text>
+
           {loading ? (
             <ActivityIndicator color={COLORS.accent} style={{ marginTop: 40 }} />
           ) : filteredProducts.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name={productIcon as any} size={48} color={COLORS.textMuted} />
-              <Text style={styles.emptyText}>{mode === 'category' ? 'No products in this category' : 'No products yet'}</Text>
+              <Text style={styles.emptyText}>
+                {orderView === 'in_order'
+                  ? 'No products added to order yet'
+                  : mode === 'category'
+                    ? 'No products in this category'
+                    : 'No products yet'}
+              </Text>
               <TouchableOpacity style={styles.emptyAddBtn} onPress={openAdd}>
                 <Text style={styles.emptyAddText}>Add Product</Text>
               </TouchableOpacity>
@@ -559,11 +662,40 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
             <FlatList
               data={filteredProducts}
               keyExtractor={item => item.id}
-              numColumns={isMobile ? 2 : 3}
-              key={isMobile ? 'mobile' : 'desktop'}
+              numColumns={viewMode === 'list' ? 1 : productColumns}
+              key={`products-${viewMode}-${viewMode === 'list' ? 1 : productColumns}`}
               contentContainerStyle={styles.grid}
               renderItem={({ item }) => {
                 const ct = cartItem(item);
+                if (viewMode === 'list') {
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.productListRow,
+                        !isMobile && selectedProduct?.id === item.id && styles.productListRowSelected,
+                      ]}
+                      onPress={() => handleSelectProduct(item)}
+                      activeOpacity={0.85}
+                    >
+                      <View style={styles.productListIconWrap}>
+                        <Ionicons name={productIcon as any} size={20} color={COLORS.accent} />
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.productListName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.productListMeta} numberOfLines={1}>{item.description ?? 'No description'}</Text>
+                      </View>
+                      <View style={styles.productListRight}>
+                        <Text style={styles.productListPrice}>TZS {item.selling_price.toLocaleString()}</Text>
+                        {ct && ct.quantity > 0 && (
+                          <View style={styles.cartBadgeInline}>
+                            <Text style={styles.cartBadgeText}>{ct.quantity}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }
+
                 return (
                   <TouchableOpacity
                     style={[
@@ -609,17 +741,23 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
         </View>
 
         {/* Desktop detail panel */}
-        {!isMobile && selectedProduct && (
+        {!isMobile && showDesktopDetail && selectedProduct && (
           <ScrollView style={styles.detailPanel}>
+            <TouchableOpacity
+              style={styles.desktopDetailClose}
+              onPress={() => setShowDesktopDetail(false)}
+            >
+              <Ionicons name="close" size={18} color={COLORS.textSecondary} />
+            </TouchableOpacity>
             {renderDetail(selectedProduct)}
           </ScrollView>
         )}
       </View>
 
       {/* Mobile detail modal */}
-      <Modal visible={isMobile && detailVisible} transparent animationType="slide">
+      <Modal visible={isMobile && detailVisible} transparent animationType="slide" onRequestClose={() => setDetailVisible(false)}>
         <View style={styles.mobileDetailOverlay}>
-          <View style={styles.mobileDetailSheet}>
+          <View style={[styles.mobileDetailSheet, isCompact && styles.mobileDetailSheetCompact]}>
             <TouchableOpacity style={styles.mobileSheetClose} onPress={() => setDetailVisible(false)}>
               <Ionicons name="close" size={22} color={COLORS.text} />
             </TouchableOpacity>
@@ -629,12 +767,12 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
       </Modal>
 
       {/* Add / Edit product modal */}
-      <Modal visible={crudVisible} transparent animationType="fade">
+      <Modal visible={crudVisible} transparent animationType="fade" onRequestClose={() => setCrudVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalBox}>
+            <View style={[styles.modalBox, isCompact && styles.modalBoxCompact]}>
               <Text style={styles.modalTitle}>{editingProduct ? 'Edit Product' : 'New Product'}</Text>
-              <ScrollView>
+              <ScrollView keyboardShouldPersistTaps="handled">
                 {[
                   { label: 'Name *',        key: 'name',           keyboard: 'default' },
                   { label: 'Description',   key: 'description',    keyboard: 'default' },
@@ -656,7 +794,7 @@ export function CategoryItemsScreen({ category = null, onBack }: Props) {
                   </View>
                 ))}
               </ScrollView>
-              <View style={styles.modalBtns}>
+              <View style={[styles.modalBtns, isCompact && styles.modalBtnsMobile]}>
                 <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setCrudVisible(false)}>
                   <Text style={styles.modalCancelText}>Cancel</Text>
                 </TouchableOpacity>
@@ -686,10 +824,24 @@ const styles = StyleSheet.create({
   gridHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  gridTitleWrap: {
+    flex: 1,
+    marginRight: SPACING.sm,
+  },
+  gridTitleWrapCompact: {
+    marginRight: 0,
+    marginBottom: SPACING.xs,
+  },
+  gridHeaderMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
   },
   gridTitle: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text },
   gridSubTitle: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 2 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, flexWrap: 'wrap' },
+  headerActionsMobile: { width: '100%', gap: SPACING.xs },
   modeBtn: {
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -698,9 +850,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 5,
   },
+  modeBtnMobile: {
+    flexGrow: 0,
+    flexShrink: 1,
+    minWidth: 78,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 1,
+  },
   modeBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  modeBtnText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, fontWeight: '600' },
+  modeBtnText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, fontWeight: '600', textAlign: 'center' },
   modeBtnTextActive: { color: COLORS.white },
+  viewModeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    overflow: 'hidden',
+    minHeight: 36,
+  },
+  viewModeBtn: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  viewModeBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
   importBtn: {
     width: 32,
     height: 32,
@@ -710,6 +893,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.primary,
     backgroundColor: COLORS.surface,
+  },
+  importBtnMobile: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   templateBtn: {
     width: 32,
@@ -721,9 +909,19 @@ const styles = StyleSheet.create({
     borderColor: COLORS.info,
     backgroundColor: COLORS.surface,
   },
+  templateBtnMobile: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
   addBtn: {
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: COLORS.accent, alignItems: 'center', justifyContent: 'center',
+  },
+  addBtnMobile: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   searchWrap: {
     marginHorizontal: SPACING.md,
@@ -737,6 +935,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
+    minHeight: 44,
   },
   searchInput: { flex: 1, fontSize: FONTS.sizes.sm, color: COLORS.text },
   grid: { padding: SPACING.md },
@@ -744,6 +943,60 @@ const styles = StyleSheet.create({
     flex: 1, margin: SPACING.sm, backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg, padding: SPACING.md, alignItems: 'center',
     ...SHADOWS.sm, position: 'relative',
+  },
+  productListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    marginHorizontal: SPACING.sm,
+    marginBottom: SPACING.xs,
+    minHeight: 56,
+  },
+  productListRowSelected: {
+    borderColor: COLORS.accent,
+    backgroundColor: COLORS.accent + '12',
+  },
+  productListIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productListName: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  productListMeta: {
+    marginTop: 2,
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textSecondary,
+  },
+  productListRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  productListPrice: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '700',
+    color: COLORS.accent,
+  },
+  cartBadgeInline: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.full,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   productCardSelected: { backgroundColor: COLORS.accent },
   productImageWrap: {
@@ -771,11 +1024,26 @@ const styles = StyleSheet.create({
     width: 260, backgroundColor: COLORS.surface,
     padding: SPACING.base, borderLeftWidth: 1, borderLeftColor: COLORS.border,
   },
+  desktopDetailClose: {
+    alignSelf: 'flex-end',
+    padding: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  orderHint: {
+    marginHorizontal: SPACING.md,
+    marginBottom: SPACING.xs,
+    color: COLORS.textSecondary,
+    fontSize: FONTS.sizes.xs,
+  },
   // Mobile detail bottom sheet
   mobileDetailOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   mobileDetailSheet: {
     backgroundColor: COLORS.surface, borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
     padding: SPACING.xl, maxHeight: '85%',
+  },
+  mobileDetailSheetCompact: {
+    padding: SPACING.base,
+    maxHeight: '88%',
   },
   mobileSheetClose: { alignSelf: 'flex-end', padding: SPACING.xs, marginBottom: SPACING.sm },
   // Shared detail content
@@ -786,19 +1054,23 @@ const styles = StyleSheet.create({
   detailName: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text, textAlign: 'center' },
   detailWeight: { color: COLORS.textSecondary, fontSize: FONTS.sizes.sm, textAlign: 'center' },
   detailPrice: { fontSize: FONTS.sizes['2xl'], fontWeight: '800', color: COLORS.accent, textAlign: 'center', marginVertical: SPACING.sm },
-  detailMeta: { flexDirection: 'row', justifyContent: 'center', gap: SPACING.xl, marginBottom: SPACING.md },
+  detailMeta: { flexDirection: 'row', justifyContent: 'center', gap: SPACING.xl, marginBottom: SPACING.md, flexWrap: 'wrap' },
+  detailMetaCompact: { gap: SPACING.md },
   detailMetaItem: { alignItems: 'center' },
   detailMetaLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
   detailMetaValue: { fontSize: FONTS.sizes.base, fontWeight: '600', color: COLORS.text },
   detailActions: { gap: SPACING.sm, marginTop: SPACING.sm },
+  detailActionsMobile: { flexDirection: 'column' },
   detailEditBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: SPACING.xs,
     borderWidth: 1, borderColor: COLORS.primary, borderRadius: RADIUS.md, paddingVertical: SPACING.sm,
+    minHeight: 44,
   },
   detailEditText: { color: COLORS.primary, fontWeight: '600', fontSize: FONTS.sizes.sm },
   addToOrderBtn: {
     backgroundColor: COLORS.accent, borderRadius: RADIUS.md,
     paddingVertical: SPACING.md, alignItems: 'center',
+    minHeight: 44,
   },
   addToOrderText: { color: COLORS.white, fontSize: FONTS.sizes.base, fontWeight: '700' },
   // CRUD modal
@@ -806,6 +1078,11 @@ const styles = StyleSheet.create({
   modalBox: {
     backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, padding: SPACING.xl,
     width: '90%', maxWidth: 480, maxHeight: '85%',
+  },
+  modalBoxCompact: {
+    width: '94%',
+    padding: SPACING.base,
+    maxHeight: '90%',
   },
   modalTitle: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.md },
   fieldWrap: { marginBottom: SPACING.md },
@@ -816,12 +1093,14 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sizes.base, color: COLORS.text,
   },
   modalBtns: { flexDirection: 'row', gap: SPACING.md, marginTop: SPACING.md },
+  modalBtnsMobile: { flexDirection: 'column' },
   modalCancelBtn: {
     flex: 1, padding: SPACING.md, borderRadius: RADIUS.md,
     borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',
+    minHeight: 44,
   },
   modalCancelText: { color: COLORS.textSecondary, fontWeight: '600' },
-  modalSaveBtn: { flex: 1, padding: SPACING.md, borderRadius: RADIUS.md, backgroundColor: COLORS.accent, alignItems: 'center' },
+  modalSaveBtn: { flex: 1, padding: SPACING.md, borderRadius: RADIUS.md, backgroundColor: COLORS.accent, alignItems: 'center', minHeight: 44 },
   modalSaveText: { color: COLORS.white, fontWeight: '600' },
 });
 

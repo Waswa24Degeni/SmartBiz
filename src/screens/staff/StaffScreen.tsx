@@ -9,11 +9,12 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createClient } from '@supabase/supabase-js';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS, FONTS, RADIUS, SPACING } from '../../lib/constants';
+import { COLORS, FONTS, RADIUS, SPACING, BREAKPOINTS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
 
 interface StaffRow {
@@ -90,6 +91,9 @@ function getRoleColor(role: StaffRow['role']) {
 
 export function StaffScreen() {
   const { business, user } = useAuth();
+  const { width } = useWindowDimensions();
+  const isMobile = width < BREAKPOINTS.tablet;
+  const isNarrow = width < 400;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [rows, setRows] = useState<StaffRow[]>([]);
@@ -401,7 +405,7 @@ export function StaffScreen() {
 
   if (!canManageStaff) {
     return (
-      <View style={styles.section}>
+      <View style={[styles.section, isMobile && styles.sectionMobile]}>
         <Text style={styles.sectionTitle}>Staff</Text>
         <View style={styles.formCard}>
           <Text style={styles.emptyText}>You do not have permission to manage staff.</Text>
@@ -411,19 +415,23 @@ export function StaffScreen() {
   }
 
   return (
-    <ScrollView style={styles.section} contentContainerStyle={{ paddingBottom: SPACING['2xl'] }}>
-      <View style={styles.headerRow}>
+    <ScrollView
+      style={[styles.section, isMobile && styles.sectionMobile]}
+      contentContainerStyle={{ paddingBottom: SPACING['2xl'] }}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={[styles.headerRow, isMobile && styles.headerRowMobile]}>
         <View>
-          <Text style={styles.sectionTitle}>Staff & Permissions</Text>
+          <Text style={[styles.sectionTitle, isMobile && styles.sectionTitleMobile]}>Staff & Permissions</Text>
           <Text style={styles.sectionSubtitle}>Control employee module access by permissions.</Text>
         </View>
-        <TouchableOpacity style={styles.addBtn} onPress={openCreate}>
+        <TouchableOpacity style={[styles.addBtn, isMobile && styles.addBtnMobile]} onPress={openCreate}>
           <Ionicons name="add" size={16} color={COLORS.white} />
           <Text style={styles.addBtnText}>Add Staff</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.statsRow}>
+      <View style={[styles.statsRow, isMobile && styles.statsRowMobile]}>
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{rows.length}</Text>
           <Text style={styles.statLabel}>Total Staff</Text>
@@ -439,7 +447,7 @@ export function StaffScreen() {
           <Text style={styles.emptyText}>No staff assigned yet.</Text>
         ) : (
           rows.map((row) => (
-            <View key={row.id} style={styles.staffRow}>
+            <View key={row.id} style={[styles.staffRow, isMobile && styles.staffRowMobile]}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.staffName}>{row.user?.full_name ?? row.user?.email ?? 'Unknown'}</Text>
                 <Text style={styles.staffEmail}>{row.user?.email ?? '-'}</Text>
@@ -455,11 +463,11 @@ export function StaffScreen() {
                 </View>
                 <Text style={styles.permText}>Perms: {row.permissions?.join(', ') || 'none'}</Text>
               </View>
-              <View style={styles.actionCol}>
-                <TouchableOpacity style={styles.actionBtn} onPress={() => openEdit(row)}>
+              <View style={[styles.actionCol, isMobile && styles.actionColMobile]}>
+                <TouchableOpacity style={[styles.actionBtn, isMobile && styles.actionBtnMobile]} onPress={() => openEdit(row)}>
                   <Ionicons name="create-outline" size={16} color={COLORS.info} />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.actionBtn} onPress={() => deactivate(row)}>
+                <TouchableOpacity style={[styles.actionBtn, isMobile && styles.actionBtnMobile]} onPress={() => deactivate(row)}>
                   <Ionicons name="close-circle-outline" size={16} color={COLORS.error} />
                 </TouchableOpacity>
               </View>
@@ -470,7 +478,14 @@ export function StaffScreen() {
 
       <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.overlay}>
-          <ScrollView contentContainerStyle={styles.modalBox}>
+          <ScrollView
+            contentContainerStyle={[
+              styles.modalBox,
+              isMobile && styles.modalBoxMobile,
+              isNarrow && styles.modalBoxNarrow,
+            ]}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.modalHead}>
               <Text style={styles.modalTitle}>{editTarget ? 'Edit Staff' : 'Add Staff'}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
@@ -557,10 +572,10 @@ export function StaffScreen() {
             </View>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}>
+              <TouchableOpacity style={[styles.cancelBtn, isMobile && styles.modalBtnMobile]} onPress={() => setModalVisible(false)}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
+              <TouchableOpacity style={[styles.saveBtn, isMobile && styles.modalBtnMobile, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
                 {saving ? <ActivityIndicator size="small" color={COLORS.white} /> : <Text style={styles.saveBtnText}>Save</Text>}
               </TouchableOpacity>
             </View>
@@ -577,16 +592,27 @@ const styles = StyleSheet.create({
     padding: SPACING.xl,
     backgroundColor: COLORS.background,
   },
+  sectionMobile: {
+    padding: SPACING.base,
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: SPACING.base,
   },
+  headerRowMobile: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+  },
   sectionTitle: {
     fontSize: FONTS.sizes['2xl'],
     fontWeight: '800',
     color: COLORS.text,
+  },
+  sectionTitleMobile: {
+    fontSize: FONTS.sizes.xl,
   },
   sectionSubtitle: {
     marginTop: 4,
@@ -601,6 +627,11 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.primary,
+    minHeight: 44,
+  },
+  addBtnMobile: {
+    width: '100%',
+    justifyContent: 'center',
   },
   addBtnText: {
     color: COLORS.white,
@@ -611,6 +642,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: SPACING.sm,
     marginBottom: SPACING.base,
+  },
+  statsRowMobile: {
+    flexDirection: 'column',
   },
   statCard: {
     flex: 1,
@@ -652,6 +686,10 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.surfaceAlt,
     gap: SPACING.sm,
   },
+  staffRowMobile: {
+    flexDirection: 'column',
+    gap: SPACING.xs,
+  },
   staffName: {
     color: COLORS.text,
     fontSize: FONTS.sizes.sm,
@@ -686,6 +724,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: SPACING.xs,
   },
+  actionColMobile: {
+    width: '100%',
+    justifyContent: 'flex-end',
+  },
   actionBtn: {
     width: 32,
     height: 32,
@@ -695,6 +737,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.surfaceAlt,
+  },
+  actionBtnMobile: {
+    width: 44,
+    height: 44,
   },
   overlay: {
     flex: 1,
@@ -709,6 +755,16 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     padding: SPACING.base,
     gap: SPACING.xs,
+    maxWidth: 560,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  modalBoxMobile: {
+    maxWidth: '100%',
+    padding: SPACING.sm + 2,
+  },
+  modalBoxNarrow: {
+    padding: SPACING.sm,
   },
   modalHead: {
     flexDirection: 'row',
@@ -738,6 +794,7 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sizes.sm,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.sm,
+    minHeight: 44,
   },
   chipsWrap: {
     flexDirection: 'row',
@@ -782,6 +839,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surfaceAlt,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
+    minHeight: 36,
   },
   permChipActive: {
     backgroundColor: COLORS.primary,
@@ -811,6 +869,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: SPACING.sm,
+    minHeight: 44,
   },
   cancelBtnText: {
     color: COLORS.textSecondary,
@@ -823,6 +882,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: SPACING.sm,
+    minHeight: 44,
+  },
+  modalBtnMobile: {
+    minHeight: 46,
   },
   saveBtnText: {
     color: COLORS.white,

@@ -253,7 +253,8 @@ const styles = StyleSheet.create({
   navItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: SPACING.xs + 2,
+    minHeight: 44,
+    paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.xs,
     borderRadius: RADIUS.md,
     marginBottom: 2,
@@ -365,11 +366,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 44,
     gap: SPACING.xs,
     borderWidth: 1,
     borderColor: 'rgba(248,113,113,0.35)',
     borderRadius: RADIUS.md,
-    paddingVertical: SPACING.xs + 2,
+    paddingVertical: SPACING.xs + 3,
   },
   logoutBtnCollapsed: {
     paddingHorizontal: 0,

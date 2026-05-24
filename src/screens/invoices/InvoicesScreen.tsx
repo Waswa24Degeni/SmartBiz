@@ -643,7 +643,7 @@ export function InvoicesScreen() {
       </View>
 
       {/* Mark Paid Modal */}
-      <Modal visible={markPaidVisible} transparent animationType="slide">
+      <Modal visible={markPaidVisible} transparent animationType="slide" onRequestClose={() => setMarkPaidVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
@@ -653,7 +653,7 @@ export function InvoicesScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalContent}>
+            <ScrollView style={styles.modalContent} keyboardShouldPersistTaps="handled">
               <View style={styles.modalSection}>
                 <Text style={styles.modalLabel}>Amount Paid</Text>
                 <TextInput
@@ -720,7 +720,7 @@ export function InvoicesScreen() {
       </Modal>
 
       {/* Detail Modal (Mobile) */}
-      <Modal visible={detailVisible && isMobile} transparent animationType="slide">
+      <Modal visible={detailVisible && isMobile} transparent animationType="slide" onRequestClose={() => setDetailVisible(false)}>
         <View style={styles.fullModal}>
           {selectedInvoice && <DetailContent invoice={selectedInvoice} />}
         </View>

@@ -190,20 +190,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .from('businesses')
           .select('*')
           .eq('owner_id', supabaseUser.id)
-          .maybeSingle();
+          .order('created_at', { ascending: false })
+          .limit(1);
 
         if (bizErr) {
           console.error('[AuthContext] business fetch error:', bizErr.message, bizErr.code);
         }
 
         let resolvedBiz: Record<string, any> | null = null;
-        if (bizByOwner) {
-          setBusiness(bizByOwner as Business);
-          resolvedBiz = bizByOwner;
+        const ownerBusiness = Array.isArray(bizByOwner) ? bizByOwner[0] : null;
+        if (ownerBusiness) {
+          setBusiness(ownerBusiness as Business);
+          resolvedBiz = ownerBusiness;
           // Patch users.business_id if it's missing or out of sync
-          if (!p.business_id || p.business_id !== bizByOwner.id) {
+          if (!p.business_id || p.business_id !== ownerBusiness.id) {
             supabase.from('users')
-              .update({ business_id: bizByOwner.id })
+              .update({ business_id: ownerBusiness.id })
               .eq('id', supabaseUser.id)
               .then(() => {});
           }

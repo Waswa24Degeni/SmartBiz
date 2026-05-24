@@ -28,6 +28,19 @@ import { COLORS, SPACING, FONTS, RADIUS, SHADOWS, BREAKPOINTS } from '../../lib/
 type ProductWithCategory = Product & { category?: { name?: string } };
 type CustomerLite = { id: string; full_name: string; phone?: string | null; email?: string | null };
 
+function normalizeTzPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('255') && digits.length === 12) return digits;
+  if (digits.startsWith('0') && digits.length === 10) return `255${digits.slice(1)}`;
+  if (digits.length === 9) return `255${digits}`;
+  return digits;
+}
+
+function isValidTzPhone(raw: string): boolean {
+  const normalized = normalizeTzPhone(raw);
+  return /^255\d{9}$/.test(normalized);
+}
+
 export function POSScreen() {
   const { business, user } = useAuth();
   const { currency } = useSettings();
@@ -335,10 +348,16 @@ export function POSScreen() {
       Alert.alert('Phone required', "Please enter the customer's mobile money phone number.");
       return;
     }
+    if (payMethod === 'mobile_money' && !isValidTzPhone(mobilePhone)) {
+      Alert.alert('Invalid phone', 'Enter a valid Tanzania mobile number (e.g. 07XXXXXXXX or 2557XXXXXXX).');
+      return;
+    }
     if (payMethod === 'mobile_money' && !payerName.trim()) {
       Alert.alert('Name required', "Please enter the payer's name.");
       return;
     }
+
+    const normalizedPayerPhone = payMethod === 'mobile_money' ? normalizeTzPhone(mobilePhone) : '';
 
     setProcessingSale(true);
     try {
@@ -346,29 +365,57 @@ export function POSScreen() {
         status: payMethod === 'cash' ? 'completed' : 'active',
         paymentStatus: payMethod === 'cash' ? 'paid' : 'pending',
         paymentMethod: payMethod,
-        mobilePhone: payMethod === 'mobile_money' ? mobilePhone.trim() || null : null,
+        mobilePhone: payMethod === 'mobile_money' ? normalizedPayerPhone : null,
         payerName: payMethod === 'mobile_money' ? payerName.trim() || null : null,
       });
 
       if (payMethod === 'mobile_money') {
+        const idempotencyKey = `pos_${saleId.slice(0, 8)}_${Date.now().toString(36)}`;
+
         const { data, error: fnError } = await supabase.functions.invoke('initiate-payment', {
           body: {
             payment_type: 'pos',
             channel: 'mobile',
             amount: total,
             business_id: business.id,
-            idempotency_key: `${saleId}_${Date.now()}`,
-            payer_phone: mobilePhone.trim(),
+            idempotency_key: idempotencyKey,
+            payer_phone: normalizedPayerPhone,
             payer_name: payerName.trim(),
+            payer_email: selectedCustomer?.email ?? undefined,
             pos_order_id: saleId,
           },
         });
 
         if (fnError || !data?.success) {
+          let backendMessage = data?.message as string | undefined;
+
+          if (!backendMessage && fnError) {
+            try {
+              const response = (fnError as any)?.context as Response | undefined;
+              if (response) {
+                const payload = await response.clone().json().catch(() => null);
+                backendMessage = payload?.message ?? payload?.error ?? payload?.detail;
+              }
+            } catch {
+              // Ignore parser issues and continue with fallback lookup.
+            }
+          }
+
+          if (!backendMessage) {
+            const { data: payRow } = await supabase
+              .from('payments')
+              .select('error_message, error_code')
+              .eq('idempotency_key', idempotencyKey)
+              .order('initiated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            backendMessage = payRow?.error_message ?? payRow?.error_code ?? undefined;
+          }
+
           await rollbackFailedMobileCheckout(saleId);
           Alert.alert(
             'Payment failed',
-            data?.message ?? fnError?.message ?? 'Could not send payment request to phone.',
+            backendMessage ?? fnError?.message ?? 'Could not send payment request to phone.',
           );
           return;
         }
@@ -376,6 +423,7 @@ export function POSScreen() {
         setPendingSaleId(saleId);
         setPendingOrderNumber(orderNumber);
         setAwaitingMobileConfirmation(true);
+        setMobilePhone(normalizedPayerPhone);
         setMobileStatusText('Payment request sent. Waiting for customer confirmation on phone...');
         return;
       }

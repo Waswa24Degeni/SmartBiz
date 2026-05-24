@@ -64,6 +64,10 @@ export function POSScreen() {
   const [cashReceived, setCashReceived] = useState('');
   const [mobilePhone, setMobilePhone] = useState('');
   const [payerName, setPayerName] = useState('');
+  const [awaitingMobileConfirmation, setAwaitingMobileConfirmation] = useState(false);
+  const [pendingSaleId, setPendingSaleId] = useState<string | null>(null);
+  const [pendingOrderNumber, setPendingOrderNumber] = useState<string | null>(null);
+  const [mobileStatusText, setMobileStatusText] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
@@ -73,6 +77,7 @@ export function POSScreen() {
   }, [cashReceived, total]);
 
   const openCheckout = () => {
+    if (awaitingMobileConfirmation) return;
     setCashReceived('');
     setMobilePhone('');
     setPayerName('');
@@ -158,8 +163,24 @@ export function POSScreen() {
       }
     }
 
-    return { orderNumber };
+    return { orderNumber, saleId: sale.id };
   }, [business?.id, user?.id, items, selectedCustomerId, subtotal, totalDiscount, total]);
+
+  const rollbackFailedMobileCheckout = useCallback(async (saleId: string) => {
+    try {
+      for (const item of items) {
+        await supabase
+          .from('products')
+          .update({ stock_quantity: item.product.stock_quantity })
+          .eq('id', item.product.id);
+      }
+
+      await supabase.from('sale_items').delete().eq('sale_id', saleId);
+      await supabase.from('sales').delete().eq('id', saleId);
+    } catch {
+      // Non-blocking rollback best effort; user can still recover from Bills.
+    }
+  }, [items]);
 
   const handleHoldOrder = async () => {
     setProcessingSale(true);
@@ -167,9 +188,9 @@ export function POSScreen() {
       const { orderNumber } = await persistSale({
         status: 'active',
         paymentStatus: 'pending',
-        paymentMethod: payMethod,
-        mobilePhone: payMethod === 'mobile_money' ? mobilePhone.trim() || null : null,
-        payerName: payMethod === 'mobile_money' ? payerName.trim() || null : null,
+        paymentMethod: 'cash',
+        mobilePhone: null,
+        payerName: null,
       });
 
       clearCart();
@@ -321,13 +342,43 @@ export function POSScreen() {
 
     setProcessingSale(true);
     try {
-      const { orderNumber } = await persistSale({
+      const { orderNumber, saleId } = await persistSale({
         status: payMethod === 'cash' ? 'completed' : 'active',
         paymentStatus: payMethod === 'cash' ? 'paid' : 'pending',
         paymentMethod: payMethod,
         mobilePhone: payMethod === 'mobile_money' ? mobilePhone.trim() || null : null,
         payerName: payMethod === 'mobile_money' ? payerName.trim() || null : null,
       });
+
+      if (payMethod === 'mobile_money') {
+        const { data, error: fnError } = await supabase.functions.invoke('initiate-payment', {
+          body: {
+            payment_type: 'pos',
+            channel: 'mobile',
+            amount: total,
+            business_id: business.id,
+            idempotency_key: `${saleId}_${Date.now()}`,
+            payer_phone: mobilePhone.trim(),
+            payer_name: payerName.trim(),
+            pos_order_id: saleId,
+          },
+        });
+
+        if (fnError || !data?.success) {
+          await rollbackFailedMobileCheckout(saleId);
+          Alert.alert(
+            'Payment failed',
+            data?.message ?? fnError?.message ?? 'Could not send payment request to phone.',
+          );
+          return;
+        }
+
+        setPendingSaleId(saleId);
+        setPendingOrderNumber(orderNumber);
+        setAwaitingMobileConfirmation(true);
+        setMobileStatusText('Payment request sent. Waiting for customer confirmation on phone...');
+        return;
+      }
 
       clearCart();
       setSelectedCustomerId(null);
@@ -341,7 +392,7 @@ export function POSScreen() {
         payMethod === 'cash' ? 'Payment Confirmed' : 'Payment Requested',
         payMethod === 'cash'
           ? `Sale ${orderNumber} recorded.\nChange: ${currency} ${change.toLocaleString()}`
-          : `Sale ${orderNumber} recorded.\nMobile money request sent to ${mobilePhone.trim()}.`,
+          : `A payment prompt has been sent to ${mobilePhone.trim()}. The sale will complete automatically after customer confirmation.`,
       );
       fetchProducts();
     } catch (e: any) {
@@ -350,6 +401,79 @@ export function POSScreen() {
       setProcessingSale(false);
     }
   };
+
+  useEffect(() => {
+    if (!awaitingMobileConfirmation || !pendingSaleId || !business?.id) return;
+
+    let stopped = false;
+
+    const pollStatus = async () => {
+      const { data: saleRow } = await supabase
+        .from('sales')
+        .select('payment_status, status')
+        .eq('id', pendingSaleId)
+        .maybeSingle();
+
+      if (stopped) return;
+
+      if (saleRow?.payment_status === 'paid' && saleRow?.status === 'completed') {
+        const doneOrder = pendingOrderNumber;
+
+        setAwaitingMobileConfirmation(false);
+        setPendingSaleId(null);
+        setPendingOrderNumber(null);
+        setMobileStatusText('');
+
+        clearCart();
+        setSelectedCustomerId(null);
+        setCheckoutVisible(false);
+        setCustomerSearch('');
+        setCashReceived('');
+        setMobilePhone('');
+        setPayerName('');
+        fetchProducts();
+
+        Alert.alert(
+          'Payment successful',
+          doneOrder ? `Sale ${doneOrder} has been paid successfully.` : 'Customer payment confirmed successfully.',
+        );
+        return;
+      }
+
+      const { data: payRow } = await supabase
+        .from('payments')
+        .select('status, error_message')
+        .eq('pos_order_id', pendingSaleId)
+        .order('initiated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (stopped) return;
+
+      if (payRow?.status === 'failed' || payRow?.status === 'expired') {
+        setAwaitingMobileConfirmation(false);
+        setPendingSaleId(null);
+        setPendingOrderNumber(null);
+        setMobileStatusText('');
+        Alert.alert('Payment not completed', payRow.error_message ?? 'The customer did not complete the mobile money payment.');
+      }
+    };
+
+    pollStatus();
+    const timer = setInterval(pollStatus, 3000);
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [
+    awaitingMobileConfirmation,
+    pendingSaleId,
+    pendingOrderNumber,
+    business?.id,
+    clearCart,
+    fetchProducts,
+  ]);
 
   const summaryRows = [
     { label: 'Subtotal', value: subtotal, total: false },
@@ -731,16 +855,35 @@ export function POSScreen() {
       </View>
 
       {/* ── Checkout Payment Modal ──────────────────────────── */}
-      <Modal visible={checkoutVisible} transparent animationType="fade" onRequestClose={() => setCheckoutVisible(false)}>
+      <Modal
+        visible={checkoutVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (awaitingMobileConfirmation) return;
+          setCheckoutVisible(false);
+        }}
+      >
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Confirm Payment</Text>
-                <TouchableOpacity onPress={() => setCheckoutVisible(false)} style={styles.modalCloseBtn}>
+                <TouchableOpacity
+                  onPress={() => setCheckoutVisible(false)}
+                  style={[styles.modalCloseBtn, awaitingMobileConfirmation && { opacity: 0.4 }]}
+                  disabled={awaitingMobileConfirmation}
+                >
                   <Ionicons name="close" size={20} color={COLORS.textSecondary} />
                 </TouchableOpacity>
               </View>
+
+              {awaitingMobileConfirmation && (
+                <View style={styles.waitingBanner}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={styles.waitingBannerText}>{mobileStatusText}</Text>
+                </View>
+              )}
 
               {/* Total */}
               <View style={styles.checkoutAmountCard}>
@@ -757,11 +900,13 @@ export function POSScreen() {
                   placeholderTextColor={COLORS.textMuted}
                   value={customerSearch}
                   onChangeText={setCustomerSearch}
+                  editable={!awaitingMobileConfirmation}
                 />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.customerChipsRow}>
                   <TouchableOpacity
                     style={[styles.customerChip, !selectedCustomerId && styles.customerChipActive]}
                     onPress={() => setSelectedCustomerId(null)}
+                    disabled={awaitingMobileConfirmation}
                   >
                     <Text style={[styles.customerChipText, !selectedCustomerId && styles.customerChipTextActive]}>Walk-in</Text>
                   </TouchableOpacity>
@@ -770,6 +915,7 @@ export function POSScreen() {
                       key={customer.id}
                       style={[styles.customerChip, selectedCustomerId === customer.id && styles.customerChipActive]}
                       onPress={() => handleSelectCustomer(customer.id)}
+                      disabled={awaitingMobileConfirmation}
                     >
                       <Text style={[styles.customerChipText, selectedCustomerId === customer.id && styles.customerChipTextActive]} numberOfLines={1}>
                         {customer.full_name}
@@ -795,6 +941,7 @@ export function POSScreen() {
                     key={m.id}
                     style={[styles.methodChip, payMethod === m.id && styles.methodChipActive]}
                     onPress={() => setPayMethod(m.id)}
+                    disabled={awaitingMobileConfirmation}
                   >
                     <Ionicons name={m.icon as any} size={14} color={payMethod === m.id ? COLORS.white : COLORS.textSecondary} />
                     <Text style={[styles.methodChipText, payMethod === m.id && styles.methodChipTextActive]}>{m.label}</Text>
@@ -814,6 +961,7 @@ export function POSScreen() {
                     onChangeText={setCashReceived}
                     keyboardType="numeric"
                     autoFocus
+                    editable={!awaitingMobileConfirmation}
                   />
                   {(parseFloat(cashReceived) || 0) >= total && (
                     <View style={styles.changeRow}>
@@ -837,6 +985,7 @@ export function POSScreen() {
                       onChangeText={setMobilePhone}
                       keyboardType="phone-pad"
                       autoFocus
+                      editable={!awaitingMobileConfirmation}
                     />
                   </View>
                   <View style={styles.fieldWrap}>
@@ -848,21 +997,26 @@ export function POSScreen() {
                       value={payerName}
                       onChangeText={setPayerName}
                       autoCapitalize="words"
+                      editable={!awaitingMobileConfirmation}
                     />
                   </View>
                 </>
               )}
 
               <View style={styles.modalBtns}>
-                <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setCheckoutVisible(false)}>
+                <TouchableOpacity
+                  style={[styles.modalCancelBtn, awaitingMobileConfirmation && { opacity: 0.5 }]}
+                  onPress={() => setCheckoutVisible(false)}
+                  disabled={awaitingMobileConfirmation}
+                >
                   <Text style={styles.modalCancelText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.modalConfirmBtn, processingSale && { opacity: 0.7 }]}
+                  style={[styles.modalConfirmBtn, (processingSale || awaitingMobileConfirmation) && { opacity: 0.7 }]}
                   onPress={handleCheckout}
-                  disabled={processingSale}
+                  disabled={processingSale || awaitingMobileConfirmation}
                 >
-                  {processingSale ? (
+                  {(processingSale || awaitingMobileConfirmation) ? (
                     <ActivityIndicator color={COLORS.white} size="small" />
                   ) : (
                     <Text style={styles.modalSaveText}>
@@ -1374,6 +1528,24 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.base,
   },
   modalTitle: { fontSize: FONTS.sizes.lg, fontWeight: '800', color: COLORS.text },
+  waitingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    borderWidth: 1,
+    borderColor: COLORS.infoLight,
+    backgroundColor: COLORS.infoLight + '66',
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  waitingBannerText: {
+    flex: 1,
+    color: COLORS.info,
+    fontSize: FONTS.sizes.xs,
+    fontWeight: '600',
+  },
   modalCloseBtn: {
     width: 32,
     height: 32,

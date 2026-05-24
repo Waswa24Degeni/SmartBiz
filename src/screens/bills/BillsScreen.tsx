@@ -286,9 +286,13 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
       attempts++;
 
       try {
+        console.log(`[Payment Poll] Calling verify-payment (attempt ${attempts}/${maxAttempts})...`);
+        
         const { data, error } = await supabase.functions.invoke('verify-payment', {
           body: { payment_id: paymentId },
         });
+
+        console.log(`[Payment Poll] Response (attempt ${attempts}):`, { data, error });
 
         if (error) {
           console.error(`[Payment Poll] verify-payment error (attempt ${attempts}):`, error);
@@ -297,8 +301,9 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
           return poll();
         }
 
-        const status = data?.status;
-        console.log(`[Payment Poll] Status: ${status} (attempt ${attempts}/${maxAttempts})`);
+        // Check all possible status fields
+        const status = data?.status || data?.payment_status;
+        console.log(`[Payment Poll] Status value: "${status}" | Full data:`, JSON.stringify(data, null, 2));
 
         if (status === 'completed') {
           console.log('[Payment Poll] ✓ Payment completed!');
@@ -313,9 +318,11 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
         // Still processing — keep polling
         if (attempts >= maxAttempts) {
           console.warn('[Payment Poll] Polling timeout — payment still pending');
+          console.log(`[Payment Poll] Final status received: "${status}"`);
           return null;
         }
 
+        console.log(`[Payment Poll] Still waiting... (${attempts}/${maxAttempts})`);
         await new Promise((resolve) => setTimeout(resolve, 5000));
         return poll();
       } catch (err) {

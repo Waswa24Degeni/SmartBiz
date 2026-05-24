@@ -150,38 +150,61 @@ serve(async (req: Request) => {
 
     const newStatus = SNIPPE_TO_INTERNAL[snippeResp.data.status] ?? payment.status;
 
+    console.log(`[Verify-Payment] Payment ${payment.id}: ${payment.status} → ${newStatus} (Snippe: ${snippeResp.data.status})`);
+
     // Only write if status actually changed (avoid spurious audit entries)
     if (newStatus !== payment.status) {
+      console.log(`[Verify-Payment] Updating payment status from ${payment.status} to ${newStatus}`);
+      
       const { error: updateErr } = await supabaseAdmin
         .from('payments')
-        .update({ status: newStatus })
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', payment.id);
 
       if (updateErr) {
-        console.error('payment status update error:', updateErr);
+        console.error('[Verify-Payment] ✗ Payment status update failed:', updateErr);
         // Non-fatal — still return the current known status
+      } else {
+        console.log(`[Verify-Payment] ✓ Payment ${payment.id} status updated to ${newStatus}`);
       }
 
       // Keep core domain records in sync even when webhooks are delayed/misconfigured.
       if (newStatus === 'completed') {
-        await Promise.all([
+        console.log(`[Verify-Payment] Payment completed — triggering side-effects for ${payment.payment_type}`);
+        const sideEffects = await Promise.allSettled([
           handleSubscriptionActivation(supabaseAdmin, payment),
           handlePosOrderCompletion(supabaseAdmin, payment),
         ]);
+
+        sideEffects.forEach((result, idx) => {
+          if (result.status === 'rejected') {
+            console.error(
+              `[Verify-Payment] Side-effect ${idx === 0 ? 'subscription' : 'pos'} failed:`,
+              result.reason,
+            );
+          } else {
+            console.log(`[Verify-Payment] ✓ Side-effect ${idx === 0 ? 'subscription' : 'pos'} completed`);
+          }
+        });
       }
+    } else {
+      console.log(`[Verify-Payment] No status change needed (already ${payment.status})`);
     }
 
-    return json({
+    const returnData = {
       success:           true,
       payment_id:        payment.id,
       status:            newStatus,
       gateway_reference: payment.gateway_reference,
       gateway_data:      snippeResp.data,
-    });
+    };
+
+    console.log(`[Verify-Payment] ✓ Returning response:`, returnData);
+    return json(returnData);
 
   } catch (err) {
-    console.error('Unhandled error:', err);
-    return json({ error: 'Internal server error' }, 500);
+    console.error('[Verify-Payment] ✗ Unhandled error:', err);
+    return json({ error: 'Internal server error', detail: err instanceof Error ? err.message : String(err) }, 500);
   }
 });
 
@@ -240,6 +263,8 @@ async function handlePosOrderCompletion(
 ): Promise<void> {
   if (payment.payment_type !== 'pos' || !payment.pos_order_id) return;
 
+  console.log(`[Verify-Payment.POS] Marking order ${payment.pos_order_id} as paid/completed`);
+
   const { error } = await supabase
     .from('sales')
     .update({
@@ -251,6 +276,11 @@ async function handlePosOrderCompletion(
     .eq('business_id', payment.business_id);
 
   if (error) {
-    console.error('sale completion error:', error);
+    console.error(
+      `[Verify-Payment.POS] Failed to update order ${payment.pos_order_id}:`,
+      error.message || error,
+    );
+    throw error;
+    console.log(`[Verify-Payment.POS] ✓ Order ${payment.pos_order_id} updated to paid/completed`);
   }
 }

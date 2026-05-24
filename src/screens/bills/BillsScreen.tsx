@@ -275,6 +275,60 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
     setChargeVisible(true);
   };
 
+  // Polling function to verify payment completion (called after initiating payment)
+  const pollPaymentStatus = async (
+    paymentId: string,
+    maxAttempts: number = 60, // 60 attempts = 5 minutes with 5s intervals
+  ): Promise<string | null> => {
+    let attempts = 0;
+
+    const poll = async (): Promise<string | null> => {
+      attempts++;
+
+      try {
+        const { data, error } = await supabase.functions.invoke('verify-payment', {
+          body: { payment_id: paymentId },
+        });
+
+        if (error) {
+          console.error(`[Payment Poll] verify-payment error (attempt ${attempts}):`, error);
+          if (attempts >= maxAttempts) return null;
+          await new Promise((resolve) => setTimeout(resolve, 5000)); // retry in 5s
+          return poll();
+        }
+
+        const status = data?.status;
+        console.log(`[Payment Poll] Status: ${status} (attempt ${attempts}/${maxAttempts})`);
+
+        if (status === 'completed') {
+          console.log('[Payment Poll] ✓ Payment completed!');
+          return 'completed';
+        }
+
+        if (['failed', 'expired'].includes(status)) {
+          console.log(`[Payment Poll] ✗ Payment ${status}`);
+          return status;
+        }
+
+        // Still processing — keep polling
+        if (attempts >= maxAttempts) {
+          console.warn('[Payment Poll] Polling timeout — payment still pending');
+          return null;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        return poll();
+      } catch (err) {
+        console.error(`[Payment Poll] Unexpected error (attempt ${attempts}):`, err);
+        if (attempts >= maxAttempts) return null;
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        return poll();
+      }
+    };
+
+    return poll();
+  };
+
   const handleCharge = async () => {
     if (!chargeSale) return;
 
@@ -359,12 +413,49 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
           return;
         }
 
+        // Store payment_id for polling
+        const paymentId = data?.payment_id;
+
         setChargeVisible(false);
         fetchSales(true);
         Alert.alert(
           'Request Sent',
           `A payment prompt has been sent to ${normalizedPayerPhone}. The order will be marked complete once the customer confirms on their phone.`,
         );
+
+        // ── Auto-verify payment completion (poll for up to 5 minutes) ──
+        if (paymentId) {
+          console.log(`[BillsScreen] Starting payment verification for order ${chargeSale.id} (payment_id: ${paymentId})`);
+          
+          // Run polling in background without blocking UI
+          (async () => {
+            const finalStatus = await pollPaymentStatus(paymentId);
+
+            if (finalStatus === 'completed') {
+              // Payment succeeded — refresh sales list to show update from webhook/trigger
+              console.log('[BillsScreen] Payment completed, refreshing sales...');
+              await new Promise((resolve) => setTimeout(resolve, 1000)); // give DB time to update
+              await fetchSales(true);
+
+              // Show success confirmation
+              Alert.alert(
+                '✓ Payment Confirmed',
+                `Payment of ${currency} ${newTotal.toLocaleString()} has been confirmed. Order and wallet updated.`,
+              );
+            } else if (finalStatus) {
+              // Payment failed
+              Alert.alert(
+                '✗ Payment ' + (finalStatus === 'expired' ? 'Expired' : 'Failed'),
+                `The payment ${finalStatus}. Order remains pending. Please try again.`,
+              );
+              await fetchSales(true);
+            } else {
+              // Polling timeout — payment still pending
+              console.log('[BillsScreen] Payment verification timeout (still processing)');
+              // Don't show alert — user already knows to wait for USSD
+            }
+          })();
+        }
       } else {
         // ── Cash: complete immediately ──────────────────────────────
         const { error } = await supabase

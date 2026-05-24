@@ -104,8 +104,9 @@ serve(async (req: Request) => {
   try {
     const parsed = await verifyWebhookSignature(rawBody, signature, timestamp);
     payload = parsed as SnippeWebhookPayload;
+    console.log(`[Webhook] ✓ Signature verified — Event: ${payload.event}, Ref: ${payload.reference}`);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err);
+    console.error('[Webhook] ✗ Signature verification failed:', err);
     // Return 400 so Snippe stops retrying invalid calls
     return response({ error: 'Invalid webhook signature' }, 400);
   }
@@ -127,22 +128,24 @@ serve(async (req: Request) => {
       .maybeSingle();
 
     if (fetchErr) {
-      console.error('payments lookup error:', fetchErr);
+      console.error(`[Webhook] ✗ Payments lookup failed for ref ${payload.reference}:`, fetchErr);
       // Return 200 so Snippe doesn't retry; we log for manual investigation
       return response({ received: true, warning: 'DB lookup failed' });
     }
 
     if (!payment) {
-      console.warn('Webhook for unknown reference:', payload.reference);
+      console.warn(`[Webhook] ⚠ Unknown reference: ${payload.reference}`);
       // 200 OK — prevent Snippe from retrying for references we don't know
       return response({ received: true, warning: 'Unknown reference' });
     }
+
+    console.log(`[Webhook] ✓ Found payment ${payment.id} (type: ${payment.payment_type}, current: ${payment.status})`);
 
     // 5. Map event to internal status
     const newStatus = EVENT_TO_STATUS[payload.event];
 
     if (!newStatus) {
-      console.log('Unhandled webhook event type:', payload.event);
+      console.log(`[Webhook] ⚠ Unhandled event type: ${payload.event}`);
       return response({ received: true });
     }
 
@@ -172,14 +175,25 @@ serve(async (req: Request) => {
 
     // 8. Post-completion side effects
     if (newStatus === 'completed') {
-      await Promise.all([
+      console.log(`[Webhook] Payment completed (${payment.id}) — triggering side effects`);
+      const sideEffects = await Promise.allSettled([
         handleSubscriptionActivation(supabase, payment),
         handlePosOrderCompletion(supabase, payment),
       ]);
+
+      // Log any side-effect failures
+      sideEffects.forEach((result, idx) => {
+        if (result.status === 'rejected') {
+          console.error(
+            `[Webhook] Side-effect ${idx === 0 ? 'subscription' : 'pos'} failed:`,
+            result.reason,
+          );
+        }
+      });
     }
 
     // 9. Store raw webhook payload in audit log for traceability
-    await supabase.from('payment_audit_log').insert({
+    const { error: auditErr } = await supabase.from('payment_audit_log').insert({
       payment_id:  payment.id,
       event_type:  `webhook.${payload.event}`,
       old_status:  payment.status,
@@ -188,6 +202,11 @@ serve(async (req: Request) => {
       metadata:    payload,  // full raw payload
     });
 
+    if (auditErr) {
+      console.warn('[Webhook] Audit log insert failed (non-fatal):', auditErr);
+    }
+
+    console.log(`[Webhook] ✓ Payment ${payment.id} transitioned ${payment.status} → ${newStatus}`);
     return response({ received: true, payment_id: payment.id, status: newStatus });
 
   } catch (err) {
@@ -229,7 +248,9 @@ async function handlePosOrderCompletion(
 ): Promise<void> {
   if (payment.payment_type !== 'pos' || !payment.pos_order_id) return;
 
-  const { error } = await supabase
+  console.log(`[Webhook.POS] Marking order ${payment.pos_order_id} as paid/completed`);
+
+  const { error, data } = await supabase
     .from('sales')
     .update({
       payment_status: 'paid',
@@ -240,8 +261,14 @@ async function handlePosOrderCompletion(
     .eq('business_id', payment.business_id);
 
   if (error) {
-    console.error('sale completion error:', error);
+    console.error(
+      `[Webhook.POS] Failed to update order ${payment.pos_order_id}:`,
+      error.message || error,
+    );
+    throw error; // Propagate so Promise.allSettled captures it
   }
+
+  console.log(`[Webhook.POS] ✓ Order ${payment.pos_order_id} updated to paid/completed`);
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -97,7 +97,8 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   subtitle: {
-    fontSize: FONTS.sizes.xs,
+    fontSize: FONTS.sizes.sm,
+    lineHeight: 16,
     color: COLORS.textSecondary,
     marginTop: 2,
   },

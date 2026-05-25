@@ -34,6 +34,7 @@ export function DashboardScreen() {
   const { business } = useAuth();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
+  const isSmallPhone = width < 390;
 
   const [activeTab, setActiveTab] = useState('Today');
   const [loading, setLoading] = useState(false);
@@ -191,7 +192,7 @@ export function DashboardScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, isMobile && styles.contentMobile]}
       showsVerticalScrollIndicator={false}
     >
       {/* Time selector */}
@@ -224,12 +225,17 @@ export function DashboardScreen() {
 
       {/* Mobile time selector */}
       {isMobile && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: SPACING.md }}>
-          <View style={styles.tabsWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.mobileTabsScroll}
+          contentContainerStyle={styles.mobileTabsScrollContent}
+        >
+          <View style={[styles.tabsWrap, styles.tabsWrapMobile]}>
             {TIME_TABS.map(t => (
               <Pressable
                 key={t}
-                style={[styles.tab, activeTab === t && styles.tabActive]}
+                style={[styles.tab, styles.tabMobile, activeTab === t && styles.tabActive]}
                 onPress={() => setActiveTab(t)}
               >
                 {activeTab === t && (
@@ -257,7 +263,7 @@ export function DashboardScreen() {
         ] as const).map(s => (
           <View
             key={s.label}
-            style={[styles.quickStatCard, isMobile && styles.quickStatCardMobile]}
+            style={[styles.quickStatCard, isMobile && styles.quickStatCardMobile, isSmallPhone && styles.quickStatCardSmallPhone]}
           >
             <LinearGradient
               colors={[s.bgTint + 'CC', s.bgTint + '66']}
@@ -270,8 +276,18 @@ export function DashboardScreen() {
               />
               <Ionicons name={s.icon as any} size={19} color={COLORS.white} />
             </View>
-            <Text style={styles.quickStatValue}>{s.value}</Text>
-            <Text style={[styles.quickStatLabel, { color: s.color }]}>{s.label}</Text>
+            <Text
+              style={[styles.quickStatValue, isSmallPhone && styles.quickStatValueSmallPhone]}
+              adjustsFontSizeToFit
+              minimumFontScale={0.78}
+            >
+              {s.value}
+            </Text>
+            <Text
+              style={[styles.quickStatLabel, isSmallPhone && styles.quickStatLabelSmall, { color: s.color }]}
+            >
+              {s.label}
+            </Text>
           </View>
         ))}
       </View>
@@ -280,9 +296,9 @@ export function DashboardScreen() {
       <View style={[styles.chartsRow, isMobile && styles.chartsCol]}>
         {/* Sales activity chart */}
         <Card style={styles.chartCard} title={`Sales Activity`} subtitle={activeTab}>
-          <View style={styles.nativeChartWrap}>
+          <View style={[styles.nativeChartWrap, isMobile && styles.nativeChartWrapMobile]}>
             {chartValues.map((value, i) => {
-              const h = Math.max(8, Math.round((value / maxChartValue) * 120));
+              const h = Math.max(8, Math.round((value / maxChartValue) * (isMobile ? 96 : 120)));
               return (
                 <View key={`${chartData.labels[i]}-${i}`} style={styles.nativeChartCol}>
                   <LinearGradient
@@ -291,7 +307,7 @@ export function DashboardScreen() {
                     end={{ x: 0, y: 1 }}
                     style={[styles.nativeChartBar, { height: h }]}
                   />
-                  <Text style={styles.nativeChartLabel}>{chartData.labels[i]}</Text>
+                  <Text style={[styles.nativeChartLabel, isSmallPhone && styles.nativeChartLabelSmall]}>{chartData.labels[i]}</Text>
                 </View>
               );
             })}
@@ -355,8 +371,8 @@ export function DashboardScreen() {
           {bestStaff.length === 0 ? (
             <Text style={styles.emptyText}>No data for this period</Text>
           ) : bestStaff.map((emp, i) => (
-            <View key={i} style={styles.tableRow}>
-              <View style={styles.empAvatar}>
+            <View key={i} style={[styles.tableRow, isMobile && styles.tableRowMobile]}>
+              <View style={[styles.empAvatar, isSmallPhone && styles.empAvatarSmall]}>
                 <Text style={styles.empAvatarText}>{emp.name.charAt(0)}</Text>
               </View>
               <View style={{ flex: 2 }}>
@@ -364,7 +380,7 @@ export function DashboardScreen() {
                 <Text style={styles.empRole}>{emp.role}</Text>
               </View>
               <View style={styles.salesBadge}>
-                <Text style={styles.salesBadgeText}>TZS {emp.sales >= 1000 ? (emp.sales / 1000).toFixed(1) + 'K' : emp.sales.toLocaleString()}</Text>
+                <Text style={styles.salesBadgeText} adjustsFontSizeToFit minimumFontScale={0.85}>TZS {emp.sales >= 1000 ? (emp.sales / 1000).toFixed(1) + 'K' : emp.sales.toLocaleString()}</Text>
               </View>
             </View>
           ))}
@@ -379,7 +395,7 @@ export function DashboardScreen() {
           {trending.length === 0 ? (
             <Text style={styles.emptyText}>No data for this period</Text>
           ) : trending.map((dish, i) => (
-            <View key={i} style={styles.tableRow}>
+            <View key={i} style={[styles.tableRow, isMobile && styles.tableRowMobile]}>
               <View style={[styles.rankBadge, i === 0 && styles.rankBadgeGold, i === 1 && styles.rankBadgeSilver]}>
                 <Text style={[styles.rankText, (i === 0 || i === 1) && { color: COLORS.white }]}>#{i + 1}</Text>
               </View>
@@ -396,6 +412,7 @@ export function DashboardScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   content: { padding: SPACING.lg, paddingBottom: SPACING['3xl'] },
+  contentMobile: { paddingHorizontal: SPACING.base, paddingTop: SPACING.sm, paddingBottom: SPACING['2xl'] },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: SPACING.lg, flexWrap: 'wrap', gap: SPACING.sm,
@@ -413,6 +430,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...SHADOWS.xs,
   },
+  tabsWrapMobile: {
+    padding: 2,
+  },
+  mobileTabsScroll: {
+    marginBottom: SPACING.md,
+  },
+  mobileTabsScrollContent: {
+    paddingRight: SPACING.base,
+  },
   tab: {
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs + 3,
@@ -420,12 +446,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
+  tabMobile: {
+    paddingHorizontal: SPACING.sm + 2,
+  },
   tabActive: {},
   tabText: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, fontWeight: '500', position: 'relative', zIndex: 1 },
   tabTextActive: { color: COLORS.white, fontWeight: '700' },
   // Quick stats
   quickStatsRow: { flexDirection: 'row', gap: SPACING.md, marginBottom: SPACING.md },
-  quickStatsWrap: { flexWrap: 'wrap' },
+  quickStatsWrap: { flexWrap: 'wrap', rowGap: SPACING.md, columnGap: SPACING.xs, justifyContent: 'space-between' },
   quickStatCard: {
     flex: 1,
     borderRadius: RADIUS.lg,
@@ -437,7 +466,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.borderLight,
     ...SHADOWS.sm,
   } as any,
-  quickStatCardMobile: { flex: undefined, width: '48%', marginBottom: SPACING.md },
+  quickStatCardMobile: { flex: undefined, width: '49%', marginBottom: 0, padding: SPACING.sm + 2 },
+  quickStatCardSmallPhone: { width: '48.5%' },
   quickStatIcon: {
     width: 42,
     height: 42,
@@ -448,8 +478,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-  quickStatValue: { fontSize: FONTS.sizes.xl, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5 },
-  quickStatLabel: { fontSize: FONTS.sizes.xs, fontWeight: '600', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  quickStatValue: { fontSize: FONTS.sizes.xl, lineHeight: 24, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5, flexShrink: 1 },
+  quickStatValueSmallPhone: { fontSize: FONTS.sizes.lg, lineHeight: 22 },
+  quickStatLabel: { fontSize: FONTS.sizes.sm, lineHeight: 16, fontWeight: '700', marginTop: 3, textTransform: 'uppercase', letterSpacing: 0.4, flexShrink: 1 },
+  quickStatLabelSmall: { fontSize: 11, lineHeight: 14 },
   // Charts
   chartsRow: { flexDirection: 'row', gap: SPACING.md, marginBottom: SPACING.md },
   chartsCol: { flexDirection: 'column' },
@@ -462,6 +494,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xs,
     gap: SPACING.sm,
   },
+  nativeChartWrapMobile: {
+    height: 132,
+    gap: SPACING.xs,
+    paddingHorizontal: 2,
+  },
   nativeChartCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
   nativeChartBar: {
     width: '90%',
@@ -472,9 +509,11 @@ const styles = StyleSheet.create({
   },
   nativeChartLabel: {
     marginTop: 6,
-    fontSize: 10,
+    fontSize: 11,
+    lineHeight: 14,
     color: COLORS.textSecondary,
   },
+  nativeChartLabelSmall: { fontSize: 10, lineHeight: 13, marginTop: 4 },
   revenueCard: { width: 210 },
   revenueCircle: {
     width: 130, height: 130, borderRadius: 65,
@@ -487,29 +526,31 @@ const styles = StyleSheet.create({
   revenueLegend: { gap: SPACING.xs },
   legendRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 2 },
   legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: SPACING.xs },
-  legendText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, flex: 1 },
-  legendVal: { fontSize: FONTS.sizes.xs, color: COLORS.text, fontWeight: '700' },
+  legendText: { fontSize: FONTS.sizes.sm, lineHeight: 16, color: COLORS.textSecondary, flex: 1 },
+  legendVal: { fontSize: FONTS.sizes.sm, lineHeight: 16, color: COLORS.text, fontWeight: '700' },
   statsCol: { width: 160, gap: SPACING.md },
   statCard: { marginBottom: 0 },
-  statLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SPACING.xs },
+  statLabel: { fontSize: FONTS.sizes.sm, lineHeight: 16, color: COLORS.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: SPACING.xs },
   statValue: { fontSize: FONTS.sizes['3xl'], fontWeight: '800', color: COLORS.text, letterSpacing: -1 },
   // Tables
   tablesRow: { flexDirection: 'row', gap: SPACING.md },
   tablesCol: { flexDirection: 'column' },
   tableCard: { flex: 1 },
   tableHeader: { flexDirection: 'row', marginBottom: SPACING.sm, paddingBottom: SPACING.xs, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  tableHeadText: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  tableHeadText: { fontSize: FONTS.sizes.sm, lineHeight: 16, color: COLORS.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
   tableRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.sm, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight },
+  tableRowMobile: { paddingVertical: SPACING.xs + 2 },
   empAvatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.primary + '20', alignItems: 'center', justifyContent: 'center', marginRight: SPACING.sm, borderWidth: 1, borderColor: COLORS.primary + '30' },
+  empAvatarSmall: { width: 30, height: 30, borderRadius: 15, marginRight: SPACING.xs },
   empAvatarText: { color: COLORS.primary, fontSize: FONTS.sizes.sm, fontWeight: '700' },
-  empName: { fontSize: FONTS.sizes.sm, color: COLORS.text, fontWeight: '600' },
-  empRole: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
+  empName: { fontSize: FONTS.sizes.sm, lineHeight: 17, color: COLORS.text, fontWeight: '600', flexShrink: 1 },
+  empRole: { fontSize: 11, lineHeight: 14, color: COLORS.textSecondary },
   empSales: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.text },
-  salesBadge: { backgroundColor: COLORS.successLight, borderRadius: RADIUS.sm, paddingHorizontal: SPACING.sm, paddingVertical: 3 },
-  salesBadgeText: { fontSize: FONTS.sizes.xs, color: COLORS.success, fontWeight: '700' },
+  salesBadge: { minWidth: 74, backgroundColor: COLORS.successLight, borderRadius: RADIUS.sm, paddingHorizontal: SPACING.sm, paddingVertical: 4 },
+  salesBadgeText: { fontSize: 11, lineHeight: 14, color: COLORS.success, fontWeight: '700' },
   rankBadge: { width: 28, height: 28, borderRadius: 8, backgroundColor: COLORS.borderLight, alignItems: 'center', justifyContent: 'center', marginRight: SPACING.sm },
   rankBadgeGold: { backgroundColor: COLORS.accent },
   rankBadgeSilver: { backgroundColor: COLORS.textMuted },
-  rankText: { fontSize: FONTS.sizes.xs, fontWeight: '700', color: COLORS.textSecondary },
+  rankText: { fontSize: 11, lineHeight: 14, fontWeight: '700', color: COLORS.textSecondary },
   emptyText: { fontSize: FONTS.sizes.sm, color: COLORS.textMuted, textAlign: 'center', paddingVertical: SPACING.lg },
 });

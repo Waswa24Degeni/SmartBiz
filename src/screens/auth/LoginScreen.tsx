@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -30,7 +29,7 @@ export function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<{ tone: 'error' | 'info'; title: string; message: string } | null>(null);
   const [connStatus, setConnStatus] = useState<'checking' | 'ok' | 'error'>('checking');
 
   // Test Supabase connection on mount
@@ -63,26 +62,16 @@ export function LoginScreen({ navigation }: Props) {
   const handleLogin = async () => {
     if (!validate()) return;
     setLoading(true);
-    setAuthError(null);
+    setAuthNotice(null);
     try {
       const { error } = await signIn(email.trim().toLowerCase(), password);
       if (error) {
         const msg = error || 'Invalid email or password. Please try again.';
-        setAuthError(msg);
-        if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
-          window.alert(`Login Failed\n\n${msg}`);
-        } else {
-          Alert.alert('Login Failed', msg);
-        }
+        setAuthNotice({ tone: 'error', title: 'Login Failed', message: msg });
       }
     } catch (e: any) {
       const msg = e?.message ?? 'Cannot reach server. Check your internet.';
-      setAuthError(msg);
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
-        window.alert(`Connection Error\n\n${msg}`);
-      } else {
-        Alert.alert('Connection Error', msg);
-      }
+      setAuthNotice({ tone: 'info', title: 'Connection Issue', message: msg });
     } finally {
       setLoading(false);
     }
@@ -122,10 +111,25 @@ export function LoginScreen({ navigation }: Props) {
             </View>
           )}
 
-          {!!authError && (
-            <View style={styles.authErrBanner}>
-              <Ionicons name="alert-circle-outline" size={16} color={COLORS.error} />
-              <Text style={styles.authErrText}>{authError}</Text>
+          {!!authNotice && (
+            <View
+              style={[
+                styles.noticeBanner,
+                authNotice.tone === 'error' ? styles.noticeError : styles.noticeInfo,
+              ]}
+            >
+              <Ionicons
+                name={authNotice.tone === 'error' ? 'alert-circle-outline' : 'information-circle-outline'}
+                size={16}
+                color={authNotice.tone === 'error' ? COLORS.error : COLORS.info}
+              />
+              <View style={styles.noticeBody}>
+                <Text style={styles.noticeTitle}>{authNotice.title}</Text>
+                <Text style={styles.noticeText}>{authNotice.message}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setAuthNotice(null)} style={styles.noticeClose}>
+                <Ionicons name="close" size={14} color={COLORS.textSecondary} />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -135,7 +139,7 @@ export function LoginScreen({ navigation }: Props) {
             value={email}
             onChangeText={(v) => {
               setEmail(v);
-              if (authError) setAuthError(null);
+              if (authNotice) setAuthNotice(null);
             }}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -148,7 +152,7 @@ export function LoginScreen({ navigation }: Props) {
             value={password}
             onChangeText={(v) => {
               setPassword(v);
-              if (authError) setAuthError(null);
+              if (authNotice) setAuthNotice(null);
             }}
             isPassword
             leftIcon="lock-closed-outline"
@@ -259,22 +263,44 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sizes.xs,
     flex: 1,
   },
-  authErrBanner: {
+  noticeBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 6,
-    backgroundColor: COLORS.errorLight,
     borderRadius: RADIUS.md,
     padding: SPACING.sm,
     marginBottom: SPACING.md,
     borderWidth: 1,
+  },
+  noticeError: {
+    backgroundColor: COLORS.errorLight,
     borderColor: COLORS.error + '33',
   },
-  authErrText: {
-    color: COLORS.error,
-    fontSize: FONTS.sizes.xs,
+  noticeInfo: {
+    backgroundColor: COLORS.infoLight,
+    borderColor: COLORS.info + '33',
+  },
+  noticeBody: {
     flex: 1,
+    gap: 2,
+  },
+  noticeTitle: {
+    color: COLORS.text,
+    fontSize: FONTS.sizes.xs,
+    fontWeight: '700',
+  },
+  noticeText: {
+    color: COLORS.textSecondary,
+    fontSize: FONTS.sizes.xs,
     lineHeight: 16,
+  },
+  noticeClose: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.background,
   },
   title: {
     fontSize: FONTS.sizes['2xl'],

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -28,7 +27,7 @@ export function AdminLoginScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [awaitingProfile, setAwaitingProfile] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<{ tone: 'error' | 'warning' | 'info'; title: string; message: string } | null>(null);
 
   // After signIn, wait for the profile to finish loading, then verify admin role.
   // If the role is NOT 'admin', sign out immediately and show a clear error.
@@ -39,13 +38,12 @@ export function AdminLoginScreen({ navigation }: Props) {
     setAwaitingProfile(false);
     if (user.role !== 'admin') {
       signOut();
-      Alert.alert(
-        'Access Denied',
-        'This account does not have admin privileges.\n\n' +
-        'To fix this, run scripts/fix-admin-rls.sql in your Supabase SQL Editor — ' +
-        'it will set role = \'admin\' for this account.',
-        [{ text: 'OK' }]
-      );
+      setAuthNotice({
+        tone: 'warning',
+        title: 'Access Denied',
+        message:
+          'This account does not have admin privileges. Run scripts/fix-admin-rls.sql in Supabase SQL Editor to set role = admin.',
+      });
     }
     // If role IS 'admin', AppNavigator will automatically show the Admin panel.
   }, [awaitingProfile, profileLoading, user]);
@@ -64,18 +62,13 @@ export function AdminLoginScreen({ navigation }: Props) {
     if (!validate()) return;
 
     setLoading(true);
-    setAuthError(null);
+    setAuthNotice(null);
     const { error } = await signIn(email.trim().toLowerCase(), password);
     setLoading(false);
 
     if (error) {
       const msg = error || 'Invalid email or password. Please try again.';
-      setAuthError(msg);
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
-        window.alert(`Admin Login Failed\n\n${msg}`);
-      } else {
-        Alert.alert('Admin Login Failed', msg);
-      }
+      setAuthNotice({ tone: 'error', title: 'Admin Login Failed', message: msg });
       return;
     }
 
@@ -125,10 +118,41 @@ export function AdminLoginScreen({ navigation }: Props) {
 
           <Text style={styles.title}>Admin Sign In</Text>
 
-          {!!authError && (
-            <View style={styles.authErrBanner}>
-              <Ionicons name="alert-circle-outline" size={16} color={COLORS.error} />
-              <Text style={styles.authErrText}>{authError}</Text>
+          {!!authNotice && (
+            <View
+              style={[
+                styles.noticeBanner,
+                authNotice.tone === 'error'
+                  ? styles.noticeError
+                  : authNotice.tone === 'warning'
+                    ? styles.noticeWarning
+                    : styles.noticeInfo,
+              ]}
+            >
+              <Ionicons
+                name={
+                  authNotice.tone === 'error'
+                    ? 'alert-circle-outline'
+                    : authNotice.tone === 'warning'
+                      ? 'warning-outline'
+                      : 'information-circle-outline'
+                }
+                size={16}
+                color={
+                  authNotice.tone === 'error'
+                    ? COLORS.error
+                    : authNotice.tone === 'warning'
+                      ? COLORS.warning
+                      : COLORS.info
+                }
+              />
+              <View style={styles.noticeBody}>
+                <Text style={styles.noticeTitle}>{authNotice.title}</Text>
+                <Text style={styles.noticeText}>{authNotice.message}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setAuthNotice(null)} style={styles.noticeClose}>
+                <Ionicons name="close" size={14} color={COLORS.textSecondary} />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -138,7 +162,7 @@ export function AdminLoginScreen({ navigation }: Props) {
             value={email}
             onChangeText={(v) => {
               setEmail(v);
-              if (authError) setAuthError(null);
+              if (authNotice) setAuthNotice(null);
             }}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -151,7 +175,7 @@ export function AdminLoginScreen({ navigation }: Props) {
             value={password}
             onChangeText={(v) => {
               setPassword(v);
-              if (authError) setAuthError(null);
+              if (authNotice) setAuthNotice(null);
             }}
             isPassword
             leftIcon="lock-closed-outline"
@@ -264,22 +288,49 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     marginBottom: SPACING.xs,
   },
-  authErrBanner: {
+  noticeBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: SPACING.xs,
-    backgroundColor: COLORS.errorLight,
     borderRadius: RADIUS.md,
     padding: SPACING.sm,
     borderWidth: 1,
-    borderColor: COLORS.error + '33',
     marginBottom: SPACING.xs,
   },
-  authErrText: {
+  noticeError: {
+    backgroundColor: COLORS.errorLight,
+    borderColor: COLORS.error + '33',
+  },
+  noticeWarning: {
+    backgroundColor: COLORS.warningLight,
+    borderColor: COLORS.warning + '33',
+  },
+  noticeInfo: {
+    backgroundColor: COLORS.infoLight,
+    borderColor: COLORS.info + '33',
+  },
+  noticeBody: {
+    flex: 1,
+    gap: 2,
+  },
+  noticeTitle: {
+    fontSize: FONTS.sizes.xs,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  noticeText: {
     flex: 1,
     fontSize: FONTS.sizes.xs,
-    color: COLORS.error,
+    color: COLORS.textSecondary,
     lineHeight: 16,
+  },
+  noticeClose: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.background,
   },
   hint: {
     fontSize: FONTS.sizes.xs,

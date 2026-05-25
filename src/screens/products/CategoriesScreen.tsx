@@ -194,9 +194,7 @@ export function CategoriesScreen({ onCategorySelect }: Props) {
         </View>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.accent} style={{ marginTop: 40 }} />
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="grid-outline" size={48} color={COLORS.textMuted} />
           <Text style={styles.emptyText}>
@@ -244,6 +242,12 @@ export function CategoriesScreen({ onCategorySelect }: Props) {
         />
       )}
 
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.accent} size="large" />
+        </View>
+      )}
+
       {/* Add / Edit modal */}
       <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -285,6 +289,14 @@ export function CategoriesScreen({ onCategorySelect }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.surface, borderRadius: RADIUS.md,

@@ -120,7 +120,8 @@ export function AdminDashboardScreen() {
   ];
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={[styles.container, isMobile && styles.containerMobile]} showsVerticalScrollIndicator={false}>
+    <View style={styles.screen}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.container, isMobile && styles.containerMobile]} showsVerticalScrollIndicator={false}>
       {/* Time tabs */}
       <View style={[styles.tabs, isMobile && styles.tabsMobile]}>
         {TIME_TABS.map(t => (
@@ -134,9 +135,7 @@ export function AdminDashboardScreen() {
         ))}
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.xl }} />
-      ) : fetchError ? (
+      {fetchError ? (
         <View style={styles.errorBox}>
           <Ionicons name="alert-circle-outline" size={32} color={COLORS.error} />
           <Text style={styles.errorTitle}>Unable to load dashboard</Text>
@@ -240,14 +239,30 @@ export function AdminDashboardScreen() {
           </View>
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
+      )}
+    </View>
   );
 }
 
 
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
   container: { padding: SPACING.xl, gap: SPACING.base },
   containerMobile: { padding: SPACING.base },
   tabs: { flexDirection: 'row', gap: SPACING.xs },

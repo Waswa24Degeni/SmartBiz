@@ -202,52 +202,54 @@ export function CustomersScreen() {
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
-      ) : (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: SPACING['2xl'] }}>
-          {filteredRows.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={40} color={COLORS.textMuted} />
-              <Text style={styles.emptyTitle}>No customers found</Text>
-              <Text style={styles.emptySub}>Create your first customer to track contacts and purchase history.</Text>
-            </View>
-          ) : (
-            filteredRows.map((row) => (
-              <View key={row.id} style={styles.card}>
-                <View style={styles.cardTop}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.name} numberOfLines={1}>{row.full_name}</Text>
-                    <Text style={styles.meta} numberOfLines={1}>{row.phone || 'No phone'}{row.email ? ` • ${row.email}` : ''}</Text>
-                  </View>
-                  <View style={styles.cardActions}>
-                    <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(row)}>
-                      <Ionicons name="create-outline" size={15} color={COLORS.info} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.iconBtn} onPress={() => handleDelete(row)}>
-                      <Ionicons name="trash-outline" size={15} color={COLORS.error} />
-                    </TouchableOpacity>
-                  </View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: SPACING['2xl'] }}>
+        {filteredRows.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="people-outline" size={40} color={COLORS.textMuted} />
+            <Text style={styles.emptyTitle}>No customers found</Text>
+            <Text style={styles.emptySub}>Create your first customer to track contacts and purchase history.</Text>
+          </View>
+        ) : (
+          filteredRows.map((row) => (
+            <View key={row.id} style={styles.card}>
+              <View style={styles.cardTop}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.name} numberOfLines={1}>{row.full_name}</Text>
+                  <Text style={styles.meta} numberOfLines={1}>{row.phone || 'No phone'}{row.email ? ` • ${row.email}` : ''}</Text>
                 </View>
-
-                {!!row.address && (
-                  <Text style={styles.addressText} numberOfLines={2}>{row.address}</Text>
-                )}
-
-                <View style={styles.statsRow}>
-                  <View style={styles.statPill}>
-                    <Text style={styles.statLabel}>Credit</Text>
-                    <Text style={styles.statVal}>TZS {Number(row.credit_balance ?? 0).toLocaleString()}</Text>
-                  </View>
-                  <View style={styles.statPill}>
-                    <Text style={styles.statLabel}>Loyalty</Text>
-                    <Text style={styles.statVal}>{Number(row.loyalty_points ?? 0)} pts</Text>
-                  </View>
+                <View style={styles.cardActions}>
+                  <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(row)}>
+                    <Ionicons name="create-outline" size={15} color={COLORS.info} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.iconBtn} onPress={() => handleDelete(row)}>
+                    <Ionicons name="trash-outline" size={15} color={COLORS.error} />
+                  </TouchableOpacity>
                 </View>
               </View>
-            ))
-          )}
-        </ScrollView>
+
+              {!!row.address && (
+                <Text style={styles.addressText} numberOfLines={2}>{row.address}</Text>
+              )}
+
+              <View style={styles.statsRow}>
+                <View style={styles.statPill}>
+                  <Text style={styles.statLabel}>Credit</Text>
+                  <Text style={styles.statVal}>TZS {Number(row.credit_balance ?? 0).toLocaleString()}</Text>
+                </View>
+                <View style={styles.statPill}>
+                  <Text style={styles.statLabel}>Loyalty</Text>
+                  <Text style={styles.statVal}>{Number(row.loyalty_points ?? 0)} pts</Text>
+                </View>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
       )}
 
       <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
@@ -329,6 +331,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
     padding: SPACING.base,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
   },
   topRow: {
     flexDirection: 'row',

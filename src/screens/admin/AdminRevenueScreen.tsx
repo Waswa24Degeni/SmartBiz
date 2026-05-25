@@ -297,11 +297,12 @@ export function AdminRevenueScreen() {
   const chartMax = Math.max(...stats.chartSeries.map(series => series.amount), 1);
 
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={[styles.container, isMobile && styles.containerMobile]}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.screen}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.container, isMobile && styles.containerMobile]}
+        showsVerticalScrollIndicator={false}
+      >
       <View style={[styles.tabsRow, isMobile && styles.tabsRowMobile]}>
         {PERIOD_TABS.map(period => (
           <TouchableOpacity
@@ -326,9 +327,7 @@ export function AdminRevenueScreen() {
         ))}
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.xl }} />
-      ) : fetchError ? (
+      {fetchError ? (
         <View style={styles.errorBox}>
           <Ionicons name="alert-circle-outline" size={34} color={COLORS.error} />
           <Text style={styles.errorTitle}>Unable to load revenue analytics</Text>
@@ -635,12 +634,28 @@ export function AdminRevenueScreen() {
           )}
         </>
       )}
-    </ScrollView>
+      </ScrollView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
   container: { padding: SPACING.xl, gap: SPACING.base },
   containerMobile: { padding: SPACING.base },
 

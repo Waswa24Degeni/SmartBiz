@@ -738,20 +738,17 @@ export function POSScreen() {
             </Pressable>
           </View>
 
-          {loading ? (
-            <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
-          ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[
-              styles.productsList,
-              !isMobile && { flexDirection: 'row', flexWrap: 'wrap' },
-            ]}>
-              {filteredProducts.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="cube-outline" size={40} color={COLORS.textMuted} />
-                  <Text style={styles.emptyText}>No matching products</Text>
-                </View>
-              ) : (
-                filteredProducts.map((p) => {
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[
+            styles.productsList,
+            !isMobile && { flexDirection: 'row', flexWrap: 'wrap' },
+          ]}>
+            {filteredProducts.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="cube-outline" size={40} color={COLORS.textMuted} />
+                <Text style={styles.emptyText}>No matching products</Text>
+              </View>
+            ) : (
+              filteredProducts.map((p) => {
                   const initial = p.name.charAt(0).toUpperCase();
                   const colorPalette = ['#1B3A2D', '#C49A2A', '#2563EB', '#059669', '#D97706', '#DC2626'];
                   const dotColor = colorPalette[p.name.charCodeAt(0) % colorPalette.length];
@@ -838,8 +835,7 @@ export function POSScreen() {
                   );
                 })
               )}
-            </ScrollView>
-          )}
+          </ScrollView>
           </View>
         )}
 
@@ -966,6 +962,12 @@ export function POSScreen() {
           </View>
         )}
       </View>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
+      )}
 
       {/* ── Checkout Payment Modal ──────────────────────────── */}
       <Modal
@@ -1173,6 +1175,14 @@ export function POSScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 30,
+    elevation: 30,
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

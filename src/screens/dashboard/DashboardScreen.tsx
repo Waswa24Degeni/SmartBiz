@@ -190,11 +190,12 @@ export function DashboardScreen() {
   const maxChartValue = Math.max(...chartValues, 1);
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[styles.content, isMobile && styles.contentMobile]}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.screen}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={[styles.content, isMobile && styles.contentMobile]}
+        showsVerticalScrollIndicator={false}
+      >
       {/* Time selector */}
       <View style={styles.header}>
         <View style={styles.headerRight}>
@@ -219,7 +220,6 @@ export function DashboardScreen() {
               ))}
             </View>
           )}
-          {loading && <ActivityIndicator color={COLORS.accent} size="small" />}
         </View>
       </View>
 
@@ -405,11 +405,19 @@ export function DashboardScreen() {
           ))}
         </Card>
       </View>
-    </ScrollView>
+      </ScrollView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.accent} size="large" />
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.background },
   container: { flex: 1, backgroundColor: COLORS.background },
   content: { padding: SPACING.lg, paddingBottom: SPACING['3xl'] },
   contentMobile: { paddingHorizontal: SPACING.base, paddingTop: SPACING.sm, paddingBottom: SPACING['2xl'] },
@@ -553,4 +561,12 @@ const styles = StyleSheet.create({
   rankBadgeSilver: { backgroundColor: COLORS.textMuted },
   rankText: { fontSize: 11, lineHeight: 14, fontWeight: '700', color: COLORS.textSecondary },
   emptyText: { fontSize: FONTS.sizes.sm, color: COLORS.textMuted, textAlign: 'center', paddingVertical: SPACING.lg },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
 });

@@ -168,9 +168,12 @@ export function AdminPaymentScreen() {
     if (tab === 'History') loadHistory();
   }, [tab, loadHistory]);
 
+  const pageLoading = tab === 'Config' ? cfgLoading : histLoading;
+
   // ─── Render ─────────────────────────────────────────────────
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.screen}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       {/* Summary banner */}
       <View style={[styles.banner, isMobile && styles.bannerMobile]}>
         <View style={styles.bannerIcon}>
@@ -199,10 +202,7 @@ export function AdminPaymentScreen() {
       </View>
 
       {tab === 'Config' ? (
-        cfgLoading ? (
-          <ActivityIndicator color={COLORS.accent} style={{ marginTop: 40 }} />
-        ) : (
-          <View style={styles.card}>
+        <View style={styles.card}>
             {/* Live mode toggle */}
             <View style={styles.settingRow}>
               <View style={{ flex: 1 }}>
@@ -310,11 +310,8 @@ export function AdminPaymentScreen() {
               style={{ marginTop: SPACING.xl }}
             />
           </View>
-        )
       ) : (
-        histLoading ? (
-          <ActivityIndicator color={COLORS.accent} style={{ marginTop: 40 }} />
-        ) : history.length === 0 ? (
+        history.length === 0 ? (
           <View style={styles.emptyBox}>
             <Ionicons name="receipt-outline" size={48} color={COLORS.textMuted} />
             <Text style={styles.emptyTitle}>No payments yet</Text>
@@ -402,12 +399,28 @@ export function AdminPaymentScreen() {
           />
         </View>
       </Modal>
-    </ScrollView>
+
+      {pageLoading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.accent} size="large" />
+        </View>
+      )}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.background },
   scroll:     { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
   container:  { padding: SPACING.lg, paddingBottom: SPACING['2xl'] },
 
   banner: {

@@ -274,56 +274,58 @@ export function SupportScreen() {
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
-      ) : (
-        <ScrollView contentContainerStyle={styles.listWrap} showsVerticalScrollIndicator={false}>
-          {tickets.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="help-buoy-outline" size={32} color={COLORS.textMuted} />
-              <Text style={styles.emptyText}>No support tickets yet</Text>
-            </View>
-          ) : (
-            tickets.map((ticket) => (
-              <View key={ticket.id} style={styles.card}>
-                <View style={styles.rowTop}>
-                  <Text style={styles.subject}>{ticket.subject}</Text>
-                  <Text style={styles.dateText}>{format(new Date(ticket.created_at), 'dd MMM · HH:mm')}</Text>
+      <ScrollView contentContainerStyle={styles.listWrap} showsVerticalScrollIndicator={false}>
+        {tickets.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="help-buoy-outline" size={32} color={COLORS.textMuted} />
+            <Text style={styles.emptyText}>No support tickets yet</Text>
+          </View>
+        ) : (
+          tickets.map((ticket) => (
+            <View key={ticket.id} style={styles.card}>
+              <View style={styles.rowTop}>
+                <Text style={styles.subject}>{ticket.subject}</Text>
+                <Text style={styles.dateText}>{format(new Date(ticket.created_at), 'dd MMM · HH:mm')}</Text>
+              </View>
+
+              <Text style={styles.body}>{ticket.body}</Text>
+
+              <View style={styles.badgeRow}>
+                <View style={[styles.badge, { backgroundColor: STATUS_COLORS[ticket.status] + '22' }]}>
+                  <Text style={[styles.badgeText, { color: STATUS_COLORS[ticket.status] }]}>{ticket.status.replace('_', ' ')}</Text>
                 </View>
-
-                <Text style={styles.body}>{ticket.body}</Text>
-
-                <View style={styles.badgeRow}>
-                  <View style={[styles.badge, { backgroundColor: STATUS_COLORS[ticket.status] + '22' }]}>
-                    <Text style={[styles.badgeText, { color: STATUS_COLORS[ticket.status] }]}>{ticket.status.replace('_', ' ')}</Text>
-                  </View>
-                  <View style={[styles.badge, { backgroundColor: PRIORITY_COLORS[ticket.priority] + '22' }]}>
-                    <Text style={[styles.badgeText, { color: PRIORITY_COLORS[ticket.priority] }]}>{ticket.priority}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.actionsRow}>
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => openThread(ticket)}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={14} color={COLORS.primary} />
-                    <Text style={[styles.actionText, { color: COLORS.primary }]}>Open Chat</Text>
-                  </TouchableOpacity>
-
-                  {ticket.status !== 'closed' && (
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => handleCloseTicket(ticket)}>
-                      <Ionicons name="checkmark-circle-outline" size={14} color={COLORS.success} />
-                      <Text style={[styles.actionText, { color: COLORS.success }]}>Close</Text>
-                    </TouchableOpacity>
-                  )}
-
-                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleDelete(ticket)}>
-                    <Ionicons name="trash-outline" size={14} color={COLORS.error} />
-                    <Text style={[styles.actionText, { color: COLORS.error }]}>Delete</Text>
-                  </TouchableOpacity>
+                <View style={[styles.badge, { backgroundColor: PRIORITY_COLORS[ticket.priority] + '22' }]}>
+                  <Text style={[styles.badgeText, { color: PRIORITY_COLORS[ticket.priority] }]}>{ticket.priority}</Text>
                 </View>
               </View>
-            ))
-          )}
-        </ScrollView>
+
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={styles.actionBtn} onPress={() => openThread(ticket)}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={14} color={COLORS.primary} />
+                  <Text style={[styles.actionText, { color: COLORS.primary }]}>Open Chat</Text>
+                </TouchableOpacity>
+
+                {ticket.status !== 'closed' && (
+                  <TouchableOpacity style={styles.actionBtn} onPress={() => handleCloseTicket(ticket)}>
+                    <Ionicons name="checkmark-circle-outline" size={14} color={COLORS.success} />
+                    <Text style={[styles.actionText, { color: COLORS.success }]}>Close</Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity style={styles.actionBtn} onPress={() => handleDelete(ticket)}>
+                  <Ionicons name="trash-outline" size={14} color={COLORS.error} />
+                  <Text style={[styles.actionText, { color: COLORS.error }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
       )}
 
       <Modal visible={modalOpen} transparent animationType="fade" onRequestClose={() => setModalOpen(false)}>
@@ -444,6 +446,14 @@ export function SupportScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

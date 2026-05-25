@@ -1323,9 +1323,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
             )}
           </View>
 
-          {loading ? (
-            <ActivityIndicator color={COLORS.accent} style={{ marginTop: 48 }} />
-          ) : filtered.length === 0 ? (
+          {filtered.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="receipt-outline" size={40} color={COLORS.textMuted} />
               <Text style={styles.emptyText}>{search ? 'No matching orders' : 'No orders yet'}</Text>
@@ -1430,6 +1428,12 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
           </View>
         )}
       </View>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.accent} size="large" />
+        </View>
+      )}
 
       <Modal visible={isMobile && detailVisible} transparent animationType="slide" onRequestClose={() => setDetailVisible(false)}>
         <View style={styles.overlay}>
@@ -1767,6 +1771,14 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background, overflow: 'hidden' },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
 
   statsStrip: {
     flexGrow: 0,

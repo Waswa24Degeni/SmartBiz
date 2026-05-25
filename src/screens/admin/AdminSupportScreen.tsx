@@ -273,9 +273,7 @@ export function AdminSupportScreen() {
         </ScrollView>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
-      ) : fetchError ? (
+      {fetchError ? (
         <View style={styles.errorBox}>
           <Ionicons name="alert-circle-outline" size={32} color={COLORS.error} />
           <Text style={styles.errorTitle}>Unable to load tickets</Text>
@@ -343,6 +341,12 @@ export function AdminSupportScreen() {
             ))
           )}
         </ScrollView>
+      )}
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
       )}
 
       <Modal visible={!!replyTarget} transparent animationType="slide" onRequestClose={() => setReplyTarget(null)}>
@@ -417,6 +421,14 @@ export function AdminSupportScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
   summaryRow: {
     flexDirection: 'row',
     gap: SPACING.base,

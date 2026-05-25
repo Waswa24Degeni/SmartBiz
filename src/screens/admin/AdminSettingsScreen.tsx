@@ -139,20 +139,13 @@ export function AdminSettingsScreen() {
     Alert.alert('Saved', 'Settings updated successfully.');
   };
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={COLORS.primary} size="large" />
-      </View>
-    );
-  }
-
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.screen}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
       {/* General */}
       <View style={styles.section}>
         <Text style={styles.sectionHeader}>General</Text>
@@ -311,15 +304,30 @@ export function AdminSettingsScreen() {
             <Text style={styles.saveBtnText}>Save Settings</Text>
           </>
         )}
-      </TouchableOpacity>
-    </ScrollView>
+        </TouchableOpacity>
+        </ScrollView>
+
+        {loading && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator color={COLORS.primary} size="large" />
+          </View>
+        )}
+      </View>
   );
 }
 
 const styles = StyleSheet.create({
+    screen: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flex: 1, backgroundColor: COLORS.background },
   container: { padding: SPACING.xl, gap: SPACING.base },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    loadingOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(17, 24, 39, 0.24)',
+      zIndex: 20,
+      elevation: 20,
+    },
 
   section: {
     backgroundColor: COLORS.surface,

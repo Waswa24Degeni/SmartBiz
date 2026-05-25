@@ -481,7 +481,8 @@ export function ReportsScreen() {
   };
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.screen}>
+      <ScrollView style={styles.root} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header Section */}
       <View style={styles.headerSection}>
         <View>
@@ -568,12 +569,7 @@ export function ReportsScreen() {
         </View>
       </View>
 
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator color={COLORS.primary} size="large" />
-          <Text style={styles.loadingText}>Loading {reportType === 'sales' ? 'sales' : 'advanced'} report...</Text>
-        </View>
-      ) : (
+      {
         <>
           {reportType === 'sales' ? (
             <>
@@ -740,12 +736,20 @@ export function ReportsScreen() {
             </>
           )}
         </>
+      }
+      </ScrollView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.background },
   root: { flex: 1, backgroundColor: COLORS.background },
   container: { padding: SPACING.base, gap: SPACING.lg },
 
@@ -771,8 +775,14 @@ const styles = StyleSheet.create({
   reportTypeTextActive: { color: COLORS.white, fontWeight: '700' },
 
   /* Loading State */
-  loadingContainer: { justifyContent: 'center', alignItems: 'center', paddingVertical: SPACING['2xl'], gap: SPACING.md },
-  loadingText: { fontSize: FONTS.sizes.sm, color: COLORS.textMuted, marginTop: SPACING.sm },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
 
   /* Controls */
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.md },

@@ -457,7 +457,8 @@ export function AdminPlansScreen() {
   const planOrder = ['free', 'starter', 'business', 'premium'];
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.screen}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       {/* Summary */}
       <View style={styles.summaryRow}>
         <View style={styles.summaryCard}>
@@ -494,9 +495,7 @@ export function AdminPlansScreen() {
         </TouchableOpacity>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.xl }} />
-      ) : fetchError ? (
+      {fetchError ? (
         <View style={styles.errorBox}>
           <Ionicons name="alert-circle-outline" size={32} color={COLORS.error} />
           <Text style={styles.errorTitle}>Unable to load plans</Text>
@@ -847,12 +846,28 @@ export function AdminPlansScreen() {
           </ScrollView>
         </View>
       </Modal>
-    </ScrollView>
+      </ScrollView>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.background },
   scroll: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
   container: { padding: SPACING.xl, gap: SPACING.base },
   summaryRow: { flexDirection: 'row', gap: SPACING.base, flexWrap: 'wrap' },
   summaryCard: {

@@ -210,9 +210,7 @@ export function AdminBusinessesScreen() {
         </View>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
-      ) : fetchError ? (
+      {fetchError ? (
         <View style={styles.errorBox}>
           <Ionicons name="alert-circle-outline" size={32} color={COLORS.error} />
           <Text style={styles.errorTitle}>Unable to load businesses</Text>
@@ -364,6 +362,12 @@ export function AdminBusinessesScreen() {
         </ScrollView>
       )}
 
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
+      )}
+
       <Modal visible={!!detailTarget} transparent animationType="slide" onRequestClose={() => setDetailTarget(null)}>
         <View style={styles.overlay}>
           <View style={styles.modal}>
@@ -443,6 +447,14 @@ export function AdminBusinessesScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',

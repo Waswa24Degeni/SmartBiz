@@ -558,9 +558,7 @@ export function InvoicesScreen() {
           </View>
 
           {/* List */}
-          {loading ? (
-            <ActivityIndicator color={COLORS.accent} style={{ marginTop: 48 }} />
-          ) : filtered.length === 0 ? (
+          {filtered.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="document-outline" size={40} color={COLORS.textMuted} />
               <Text style={styles.emptyText}>
@@ -641,6 +639,12 @@ export function InvoicesScreen() {
           </View>
         )}
       </View>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.accent} size="large" />
+        </View>
+      )}
 
       {/* Mark Paid Modal */}
       <Modal visible={markPaidVisible} transparent animationType="slide" onRequestClose={() => setMarkPaidVisible(false)}>
@@ -731,6 +735,14 @@ export function InvoicesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
 
   statsStrip: { maxHeight: 100 },
   statsStripContent: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm, gap: SPACING.sm },

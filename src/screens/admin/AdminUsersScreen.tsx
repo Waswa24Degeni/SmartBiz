@@ -149,9 +149,7 @@ export function AdminUsersScreen() {
         </View>
       </View>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: SPACING.xl }} />
-      ) : fetchError ? (
+      {fetchError ? (
         <View style={styles.errorBox}>
           <Ionicons name="alert-circle-outline" size={32} color={COLORS.error} />
           <Text style={styles.errorTitle}>Unable to load users</Text>
@@ -218,6 +216,12 @@ export function AdminUsersScreen() {
         </ScrollView>
       )}
 
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={COLORS.primary} size="large" />
+        </View>
+      )}
+
       {/* Edit Role Modal */}
       <Modal visible={!!editTarget} transparent animationType="fade" onRequestClose={() => setEditTarget(null)}>
         <View style={styles.overlay}>
@@ -258,6 +262,14 @@ export function AdminUsersScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.background },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    zIndex: 20,
+    elevation: 20,
+  },
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',

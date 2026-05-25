@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { clearStoredAuthSession, supabase } from '../lib/supabase';
 import { User, Business, Subscription } from '../types';
 
 interface AuthContextValue {
@@ -28,6 +28,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Tracks whether an in-flight profile fetch is happening after signIn
   const [profileLoading, setProfileLoading] = useState(false);
 
+  const isRefreshTokenError = (err: unknown): boolean => {
+    const msg = String((err as any)?.message ?? err ?? '').toLowerCase();
+    return msg.includes('invalid refresh token') || msg.includes('refresh token not found');
+  };
+
+  const recoverFromInvalidSession = async (reason?: unknown) => {
+    console.warn('[AuthContext] Recovering from invalid session token:', reason);
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+      // Ignore sign-out errors during recovery.
+    }
+    try {
+      await clearStoredAuthSession();
+    } catch (cleanupErr) {
+      console.warn('[AuthContext] Failed to clear auth storage:', cleanupErr);
+    }
+    setSession(null);
+    setUser(null);
+    setBusiness(null);
+    setSubscription(null);
+    setProfileLoading(false);
+    setLoading(false);
+  };
+
   useEffect(() => {
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
@@ -41,11 +66,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((e: any) => {
         console.error('[AuthContext] getSession failed:', e?.message ?? e);
+        if (isRefreshTokenError(e)) {
+          recoverFromInvalidSession(e);
+          return;
+        }
         setLoading(false);
         setProfileLoading(false);
       });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setUser(null);
+        setBusiness(null);
+        setSubscription(null);
+        setProfileLoading(false);
+        setLoading(false);
+        return;
+      }
+
       setSession(session);
       if (session) {
         setProfileLoading(true);
@@ -249,6 +288,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error, data } = await supabase.auth.signInWithPassword({ email, password });
+    if (error && isRefreshTokenError(error)) {
+      await recoverFromInvalidSession(error);
+      return { error: 'Your session expired. Please sign in again.' };
+    }
     if (!error && data.session) {
       // On web, auth state callbacks may arrive late; set state immediately.
       setSession(data.session);

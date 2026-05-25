@@ -59,6 +59,8 @@ export function MainLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [staffPerms, setStaffPerms] = useState<string[] | null>(null);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [openOrders, setOpenOrders] = useState(0);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
@@ -98,6 +100,60 @@ export function MainLayout() {
     loadStaffPerms();
   }, [user, business?.id]);
 
+  const refreshBadges = React.useCallback(async () => {
+    if (!business?.id || !user?.id) {
+      setUnreadNotifications(0);
+      setOpenOrders(0);
+      return;
+    }
+
+    const [notifRes, ordersRes] = await Promise.all([
+      supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false),
+      supabase
+        .from('sales')
+        .select('id', { count: 'exact', head: true })
+        .eq('business_id', business.id)
+        .eq('status', 'active'),
+    ]);
+
+    if (!notifRes.error) setUnreadNotifications(notifRes.count ?? 0);
+    if (!ordersRes.error) setOpenOrders(ordersRes.count ?? 0);
+  }, [business?.id, user?.id]);
+
+  React.useEffect(() => {
+    refreshBadges();
+  }, [refreshBadges, route]);
+
+  React.useEffect(() => {
+    if (!business?.id || !user?.id) return;
+    const notifChannel = supabase
+      .channel(`badge-notifications-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+        () => refreshBadges(),
+      )
+      .subscribe();
+
+    const salesChannel = supabase
+      .channel(`badge-sales-${business.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sales', filter: `business_id=eq.${business.id}` },
+        () => refreshBadges(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(notifChannel);
+      supabase.removeChannel(salesChannel);
+    };
+  }, [business?.id, user?.id, refreshBadges]);
+
   const hasAccess = React.useCallback((r: Route) => {
     // Platform admin accounts belong in AdminLayout, not here
     if (user?.role === 'admin') return false;
@@ -106,7 +162,12 @@ export function MainLayout() {
     return staffPerms.includes('*') || staffPerms.includes(ROUTE_PERMISSIONS[r]);
   }, [user?.role, staffPerms]);
 
-  const allowedNavItems = NAV_ITEMS.filter((item) => hasAccess(item.route));
+  const allowedNavItems = NAV_ITEMS
+    .filter((item) => hasAccess(item.route))
+    .map((item) => ({
+      ...item,
+      badge: item.route === 'Bills' && openOrders > 0 ? openOrders : undefined,
+    }));
 
   React.useEffect(() => {
     if (allowedNavItems.length === 0) return;
@@ -236,6 +297,8 @@ export function MainLayout() {
           onMenuPress={isMobile ? () => setDrawerOpen(true) : undefined}
           onNotificationsPress={() => setRoute('Notifications')}
           onActivityPress={() => setRoute('Bills')}
+          notificationsBadge={unreadNotifications}
+          activityBadge={openOrders}
           rightActions={!isMobile ? (
             <TouchableOpacity
               style={styles.desktopCollapseBtn}

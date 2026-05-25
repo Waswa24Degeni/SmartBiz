@@ -281,6 +281,7 @@ async function handlePosOrderCompletion(
       error.message || error,
     );
     throw error;
-    console.log(`[Verify-Payment.POS] ✓ Order ${payment.pos_order_id} updated to paid/completed`);
   }
+
+  console.log(`[Verify-Payment.POS] ✓ Order ${payment.pos_order_id} updated to paid/completed`);
 }

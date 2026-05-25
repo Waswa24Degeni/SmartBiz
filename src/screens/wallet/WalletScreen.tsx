@@ -48,6 +48,8 @@ const MIN_WITHDRAWAL  = PAYOUT_FEE + 1;   // Must be greater than payout fee
 const MAX_ATTEMPTS    = 3;     // password attempts before lockout
 
 type WalletTab = 'transactions' | 'withdrawals' | 'methods';
+type NoticeTone = 'info' | 'warning' | 'error' | 'success';
+type NoticeState = { tone: NoticeTone; title: string; message: string };
 
 // ─── Helper: mask sensitive account numbers ───────────────────────────────────
 function maskAccount(acc: string): string {
@@ -99,6 +101,162 @@ export function WalletScreen() {
   const [showWithdraw,   setShowWithdraw]   = useState(false);
   const [showAddMethod,  setShowAddMethod]  = useState(false);
   const [editingMethod,  setEditingMethod]  = useState<PayoutMethod | null>(null);
+  const reconcilingCollectionsRef           = useRef(false);
+  const [notice, setNotice]                 = useState<NoticeState | null>(null);
+  const noticeTimerRef                      = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showNotice = useCallback((tone: NoticeTone, title: string, message: string) => {
+    setNotice({ tone, title, message });
+    if (noticeTimerRef.current) {
+      clearTimeout(noticeTimerRef.current);
+    }
+    noticeTimerRef.current = setTimeout(() => {
+      setNotice(null);
+      noticeTimerRef.current = null;
+    }, 6000);
+  }, []);
+
+  const reconcileCompletedCollections = useCallback(async () => {
+    if (!business?.id || !isOwner || reconcilingCollectionsRef.current) return;
+
+    reconcilingCollectionsRef.current = true;
+    try {
+      const { data: walletRow, error: walletErr } = await supabase
+        .from('wallet_accounts')
+        .select('id')
+        .eq('business_id', business.id)
+        .maybeSingle();
+
+      if (walletErr || !walletRow?.id) {
+        console.warn('[WalletScreen] reconcileCompletedCollections wallet lookup failed:', walletErr?.message ?? 'missing wallet');
+        return;
+      }
+
+      const nowIso = new Date().toISOString();
+      const { data: completedPayments, error: paymentsErr } = await supabase
+        .from('payments')
+        .select('pos_order_id')
+        .eq('business_id', business.id)
+        .eq('payment_type', 'pos')
+        .eq('status', 'completed')
+        .not('pos_order_id', 'is', null)
+        .limit(500);
+
+      if (paymentsErr) throw paymentsErr;
+
+      const orderIds = ((completedPayments ?? []) as { pos_order_id: string | null }[])
+        .map((payment) => payment.pos_order_id)
+        .filter((id): id is string => !!id && /^[0-9a-fA-F-]{36}$/.test(id));
+
+      if (orderIds.length > 0) {
+        const { error: syncSalesErr } = await supabase
+          .from('sales')
+          .update({
+            payment_status: 'paid',
+            status: 'completed',
+            updated_at: nowIso,
+          })
+          .eq('business_id', business.id)
+          .in('id', orderIds)
+          .or('status.neq.completed,payment_status.neq.paid');
+
+        if (syncSalesErr) throw syncSalesErr;
+      }
+
+      const { data: completedSales, error: salesErr } = await supabase
+        .from('sales')
+        .select('id, total, order_number, cashier_id, created_at')
+        .eq('business_id', business.id)
+        .eq('status', 'completed')
+        .eq('payment_status', 'paid')
+        .eq('payment_method', 'mobile_money')
+        .limit(500);
+
+      if (salesErr) throw salesErr;
+
+      const saleRows = (completedSales ?? []) as Array<{
+        id: string;
+        total: number;
+        order_number: string | null;
+        cashier_id: string | null;
+        created_at: string;
+      }>;
+
+      if (saleRows.length > 0) {
+        const saleIds = saleRows.map((sale) => sale.id);
+        const { data: existingTx, error: txErr } = await supabase
+          .from('wallet_transactions')
+          .select('reference')
+          .eq('business_id', business.id)
+          .eq('type', 'collection')
+          .in('reference', saleIds);
+
+        if (txErr) throw txErr;
+
+        const existingRefs = new Set(((existingTx ?? []) as Array<{ reference: string | null }>).map((tx) => tx.reference).filter(Boolean));
+        const missingTx = saleRows
+          .filter((sale) => !existingRefs.has(sale.id))
+          .map((sale) => ({
+            business_id: business.id,
+            wallet_id: walletRow.id,
+            type: 'collection' as const,
+            amount: Number(sale.total ?? 0),
+            balance_before: 0,
+            balance_after: 0,
+            reference: sale.id,
+            description: `Recovered sale #${sale.order_number ?? sale.id.slice(0, 8)}`,
+            status: 'completed' as const,
+            initiated_by: sale.cashier_id,
+            created_at: sale.created_at,
+          }));
+
+        if (missingTx.length > 0) {
+          const { error: insertErr } = await supabase
+            .from('wallet_transactions')
+            .insert(missingTx);
+
+          if (insertErr) throw insertErr;
+        }
+      }
+
+      const { data: allTx, error: allTxErr } = await supabase
+        .from('wallet_transactions')
+        .select('type, amount')
+        .eq('business_id', business.id);
+
+      if (allTxErr) throw allTxErr;
+
+      const totals = ((allTx ?? []) as Array<{ type: string; amount: number }>).reduce((acc, tx) => {
+        const amount = Number(tx.amount ?? 0);
+        if (tx.type === 'collection') {
+          acc.totalCollected += amount;
+          acc.balance += amount;
+        } else if (tx.type === 'withdrawal') {
+          acc.totalWithdrawn += amount;
+          acc.balance -= amount;
+        } else if (tx.type === 'refund') {
+          acc.balance -= amount;
+        }
+        return acc;
+      }, { totalCollected: 0, totalWithdrawn: 0, balance: 0 });
+
+      const { error: walletUpdateErr } = await supabase
+        .from('wallet_accounts')
+        .update({
+          total_collected: totals.totalCollected,
+          total_withdrawn: totals.totalWithdrawn,
+          balance: Math.max(0, totals.balance),
+          updated_at: nowIso,
+        })
+        .eq('id', walletRow.id);
+
+      if (walletUpdateErr) throw walletUpdateErr;
+    } catch (e) {
+      console.warn('[WalletScreen] reconcileCompletedCollections failed:', e);
+    } finally {
+      reconcilingCollectionsRef.current = false;
+    }
+  }, [business?.id, isOwner]);
 
   // ── Load data ──────────────────────────────────────────────────────────────
   const load = useCallback(async (silent = false) => {
@@ -107,6 +265,8 @@ export function WalletScreen() {
     setError(null);
 
     try {
+      await reconcileCompletedCollections();
+
       const [walletRes, txRes, wdRes, mRes] = await Promise.all([
         supabase
           .from('wallet_accounts')
@@ -147,7 +307,7 @@ export function WalletScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [business?.id]);
+  }, [business?.id, reconcileCompletedCollections]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -172,6 +332,12 @@ export function WalletScreen() {
 
     return () => { supabase.removeChannel(sub); };
   }, [business?.id, load]);
+
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
 
   // ── Delete payout method ──────────────────────────────────────────────────
   const handleDeleteMethod = (m: PayoutMethod) => {
@@ -299,7 +465,8 @@ export function WalletScreen() {
               style={styles.withdrawBtn}
               onPress={() => {
                 if ((wallet?.balance ?? 0) < MIN_WITHDRAWAL) {
-                  Alert.alert(
+                  showNotice(
+                    'warning',
                     'Insufficient Balance',
                     `Withdrawal must be greater than payout fee (${fmtMoney(PAYOUT_FEE)}). Minimum is ${fmtMoney(MIN_WITHDRAWAL)}. ` +
                     `Current balance: ${fmtMoney(wallet?.balance ?? 0)}`
@@ -307,17 +474,12 @@ export function WalletScreen() {
                   return;
                 }
                 if (methods.length === 0) {
-                  Alert.alert(
+                  showNotice(
+                    'info',
                     'No Payout Method',
-                    'Add a bank account or mobile number first.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Add Method',
-                        onPress: () => { setTab('methods'); setShowAddMethod(true); },
-                      },
-                    ]
+                    'Add a bank account or mobile number first to enable withdrawals.'
                   );
+                  setTab('methods');
                   return;
                 }
                 setShowWithdraw(true);
@@ -329,6 +491,15 @@ export function WalletScreen() {
             </TouchableOpacity>
           )}
         </LinearGradient>
+
+        {notice && (
+          <InlineNotice
+            tone={notice.tone}
+            title={notice.title}
+            message={notice.message}
+            onClose={() => setNotice(null)}
+          />
+        )}
 
         {/* ── Tab bar ──────────────────────────────────────────────────── */}
         <View style={styles.tabBar}>
@@ -653,6 +824,7 @@ function WithdrawModal({
   const [busy,          setBusy]          = useState(false);
   const [withdrawalErr, setWithdrawalErr] = useState('');
   const [withdrawalId,  setWithdrawalId]  = useState<string | null>(null);
+  const [formNotice,    setFormNotice]    = useState<NoticeState | null>(null);
 
   const selectedMethod = methods.find(m => m.id === selectedId);
 
@@ -664,17 +836,21 @@ function WithdrawModal({
   // ── Step 1 → 2: validate form ─────────────────────────────────────────────
   const handleContinue = () => {
     if (!isAmountValid) {
-      Alert.alert('Invalid Amount',
+      setFormNotice({
+        tone: 'warning',
+        title: 'Invalid Amount',
+        message:
         numAmount < MIN_WITHDRAWAL
           ? `Withdrawal amount must be greater than payout fee (${fmtMoney(PAYOUT_FEE)}). Minimum is ${fmtMoney(MIN_WITHDRAWAL)}.`
-          : `Amount exceeds available balance of ${fmtMoney(available)}.`
-      );
+          : `Amount exceeds available balance of ${fmtMoney(available)}.`,
+      });
       return;
     }
     if (!selectedId) {
-      Alert.alert('No Method', 'Select a payout method first.');
+      setFormNotice({ tone: 'warning', title: 'No Method', message: 'Select a payout method first.' });
       return;
     }
+    setFormNotice(null);
     setWithdrawalErr('');
     setPassword('');
     setStep('confirm');
@@ -686,31 +862,34 @@ function WithdrawModal({
       Alert.alert('Too Many Attempts', 'Please wait before trying again or log out and back in.');
       return;
     }
-    if (!password.trim()) {
-      setWithdrawalErr('Enter your account password to confirm.');
-      return;
-    }
 
     setBusy(true);
     setWithdrawalErr('');
 
     try {
-      // 1. Re-authenticate to verify identity
-      const { error: authErr } = await supabase.auth.signInWithPassword({
-        email:    userEmail,
-        password: password,
-      });
+      // 1. Ensure active session; optional password check only when provided.
+      const { data: authData } = await supabase.auth.getUser();
+      if (!authData?.user) {
+        throw new Error('Your session has expired. Please log in again and retry.');
+      }
 
-      if (authErr) {
-        const remaining = MAX_ATTEMPTS - attempts - 1;
-        setAttempts(a => a + 1);
-        setWithdrawalErr(
-          remaining > 0
-            ? `Incorrect password. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`
-            : 'Too many incorrect attempts. Withdrawal locked.'
-        );
-        setBusy(false);
-        return;
+      if (password.trim()) {
+        const { error: authErr } = await supabase.auth.signInWithPassword({
+          email:    userEmail,
+          password: password,
+        });
+
+        if (authErr) {
+          const remaining = MAX_ATTEMPTS - attempts - 1;
+          setAttempts(a => a + 1);
+          setWithdrawalErr(
+            remaining > 0
+              ? `Password verification failed. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`
+              : 'Too many incorrect attempts. Withdrawal locked.'
+          );
+          setBusy(false);
+          return;
+        }
       }
 
       // 2. Call secure server-side RPC (atomic balance deduction)
@@ -722,7 +901,13 @@ function WithdrawModal({
         p_notes:            notes.trim() || null,
       });
 
-      if (rpcErr) throw rpcErr;
+      if (rpcErr) {
+        const msg = rpcErr.message || 'Withdrawal RPC failed';
+        if (/process_withdrawal|function .* does not exist/i.test(msg)) {
+          throw new Error('Withdrawal service is not installed in the database yet. Run scripts/wallet-module.sql in Supabase SQL Editor, then retry.');
+        }
+        throw rpcErr;
+      }
 
       const result = Array.isArray(data) ? data[0] : data;
       if (!result?.ok) {
@@ -764,6 +949,15 @@ function WithdrawModal({
             {/* ── Step 1: Form ─────────────────────────────────────────── */}
             {step === 'form' && (
               <View style={styles.modalBody}>
+                {formNotice && (
+                  <InlineNotice
+                    tone={formNotice.tone}
+                    title={formNotice.title}
+                    message={formNotice.message}
+                    onClose={() => setFormNotice(null)}
+                  />
+                )}
+
                 {/* Available balance banner */}
                 <View style={styles.availableBanner}>
                   <Ionicons name="wallet-outline" size={16} color={COLORS.primary} />
@@ -840,7 +1034,6 @@ function WithdrawModal({
                 <TouchableOpacity
                   style={[styles.primaryBtn, !isAmountValid && { opacity: 0.5 }]}
                   onPress={handleContinue}
-                  disabled={!isAmountValid}
                 >
                   <Text style={styles.primaryBtnText}>Continue</Text>
                   <Ionicons name="arrow-forward" size={18} color={COLORS.white} />
@@ -877,13 +1070,13 @@ function WithdrawModal({
                     <Text style={styles.securityTitle}>Identity Verification</Text>
                   </View>
                   <Text style={styles.securityBody}>
-                    Enter your SmartBiz account password to authorise this withdrawal.
+                    Enter your SmartBiz account password for extra security (optional).
                   </Text>
 
                   <View style={styles.passwordWrap}>
                     <TextInput
                       style={[styles.input, styles.passwordInput]}
-                      placeholder="Account password"
+                      placeholder="Account password (optional)"
                       secureTextEntry={!showPassword}
                       value={password}
                       onChangeText={v => { setPassword(v); setWithdrawalErr(''); }}
@@ -972,6 +1165,64 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
     <View style={styles.summaryRow}>
       <Text style={styles.summaryRowLabel}>{label}</Text>
       <Text style={styles.summaryRowValue}>{value}</Text>
+    </View>
+  );
+}
+
+function InlineNotice({
+  tone,
+  title,
+  message,
+  onClose,
+}: {
+  tone: NoticeTone;
+  title: string;
+  message: string;
+  onClose?: () => void;
+}) {
+  const cfg: Record<NoticeTone, { bg: string; border: string; text: string; icon: string }> = {
+    info: {
+      bg: COLORS.infoLight,
+      border: COLORS.info,
+      text: COLORS.info,
+      icon: 'information-circle-outline',
+    },
+    warning: {
+      bg: COLORS.warningLight,
+      border: COLORS.warning,
+      text: COLORS.warning,
+      icon: 'alert-circle-outline',
+    },
+    error: {
+      bg: COLORS.errorLight,
+      border: COLORS.error,
+      text: COLORS.error,
+      icon: 'close-circle-outline',
+    },
+    success: {
+      bg: COLORS.successLight,
+      border: COLORS.success,
+      text: COLORS.success,
+      icon: 'checkmark-circle-outline',
+    },
+  };
+
+  const theme = cfg[tone];
+
+  return (
+    <View style={[styles.inlineNotice, { backgroundColor: theme.bg, borderColor: theme.border + '66' }]}> 
+      <View style={[styles.inlineNoticeIconWrap, { backgroundColor: theme.border + '20' }]}>
+        <Ionicons name={theme.icon as any} size={18} color={theme.text} />
+      </View>
+      <View style={styles.inlineNoticeContent}>
+        <Text style={[styles.inlineNoticeTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={styles.inlineNoticeBody}>{message}</Text>
+      </View>
+      {!!onClose && (
+        <TouchableOpacity onPress={onClose} style={styles.inlineNoticeClose}>
+          <Ionicons name="close" size={16} color={COLORS.textSecondary} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -1487,6 +1738,42 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
   },
   restrictedText: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, flex: 1 },
+
+  inlineNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    borderWidth: 1,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.sm + 2,
+    marginBottom: SPACING.base,
+  },
+  inlineNoticeIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  inlineNoticeContent: { flex: 1, gap: 2 },
+  inlineNoticeTitle: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '800',
+  },
+  inlineNoticeBody: {
+    fontSize: FONTS.sizes.sm,
+    color: COLORS.textSecondary,
+    lineHeight: 19,
+  },
+  inlineNoticeClose: {
+    width: 24,
+    height: 24,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.background,
+  },
 
   // Empty state
   emptyState: {

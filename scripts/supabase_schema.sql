@@ -197,7 +197,7 @@ create table if not exists settings (
   notify_billing_alert boolean not null default true,
   theme text not null default 'light',
   language text not null default 'English',
-  currency text not null default 'TZS',
+  currency text not null default 'TZ    S',
   updated_at timestamptz not null default now()
 );
 

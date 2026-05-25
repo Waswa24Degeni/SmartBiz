@@ -15,6 +15,8 @@ interface HeaderProps {
   onSearch?: () => void;
   onNotificationsPress?: () => void;
   onActivityPress?: () => void;
+  notificationsBadge?: number;
+  activityBadge?: number;
 }
 
 export function Header({
@@ -28,6 +30,8 @@ export function Header({
   onSearch,
   onNotificationsPress,
   onActivityPress,
+  notificationsBadge = 0,
+  activityBadge = 0,
 }: HeaderProps) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -83,9 +87,19 @@ export function Header({
           {rightActions}
           <TouchableOpacity style={styles.iconBtn} onPress={onNotificationsPress} disabled={!onNotificationsPress}>
             <Ionicons name="notifications-outline" size={20} color={COLORS.text} />
+            {notificationsBadge > 0 && (
+              <View style={styles.badgeDot}>
+                <Text style={styles.badgeText}>{notificationsBadge > 99 ? '99+' : String(notificationsBadge)}</Text>
+              </View>
+            )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={onActivityPress} disabled={!onActivityPress}>
             <Ionicons name="time-outline" size={20} color={COLORS.text} />
+            {activityBadge > 0 && (
+              <View style={styles.badgeDot}>
+                <Text style={styles.badgeText}>{activityBadge > 99 ? '99+' : String(activityBadge)}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -167,6 +181,25 @@ const styles = StyleSheet.create({
     minHeight: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+  },
+  badgeDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: COLORS.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '800',
+    lineHeight: 11,
   },
   searchPlaceholder: {
     fontSize: FONTS.sizes.sm,

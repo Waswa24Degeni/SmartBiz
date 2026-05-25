@@ -109,13 +109,30 @@ RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   v_wallet wallet_accounts%ROWTYPE;
 BEGIN
-  -- Collection: only when sale is paid + completed via mobile money.
+  -- Collection: credit once when sale becomes paid+completed via mobile money.
+  -- Handles both transitions:
+  -- 1) status changes to completed, and
+  -- 2) payment_status changes to paid while status is already completed.
   IF (
-      (TG_OP = 'UPDATE' AND NEW.status = 'completed' AND OLD.status <> 'completed')
-      OR (TG_OP = 'INSERT' AND NEW.status = 'completed')
+      TG_OP = 'INSERT'
+      OR (
+        TG_OP = 'UPDATE'
+        AND (
+          OLD.status IS DISTINCT FROM NEW.status
+          OR OLD.payment_status IS DISTINCT FROM NEW.payment_status
+          OR OLD.payment_method IS DISTINCT FROM NEW.payment_method
+        )
+      )
     )
+    AND NEW.status = 'completed'
     AND NEW.payment_method = 'mobile_money'
-    AND NEW.payment_status = 'paid' THEN
+    AND NEW.payment_status = 'paid'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM wallet_transactions tx
+      WHERE tx.type = 'collection'
+        AND tx.reference = NEW.id::TEXT
+    ) THEN
 
     -- Ensure wallet exists
     INSERT INTO wallet_accounts (business_id)
@@ -153,7 +170,19 @@ BEGIN
     SELECT * INTO v_wallet
     FROM wallet_accounts WHERE business_id = NEW.business_id;
 
-    IF FOUND THEN
+    IF FOUND
+       AND EXISTS (
+         SELECT 1
+         FROM wallet_transactions tx
+         WHERE tx.type = 'collection'
+           AND tx.reference = NEW.id::TEXT
+       )
+       AND NOT EXISTS (
+         SELECT 1
+         FROM wallet_transactions tx
+         WHERE tx.type = 'refund'
+           AND tx.reference = NEW.id::TEXT
+       ) THEN
       INSERT INTO wallet_transactions (
         business_id, wallet_id, type, amount,
         balance_before, balance_after, reference, description, status, initiated_by

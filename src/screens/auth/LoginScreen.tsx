@@ -30,6 +30,7 @@ export function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [authError, setAuthError] = useState<string | null>(null);
   const [connStatus, setConnStatus] = useState<'checking' | 'ok' | 'error'>('checking');
 
   // Test Supabase connection on mount
@@ -62,13 +63,26 @@ export function LoginScreen({ navigation }: Props) {
   const handleLogin = async () => {
     if (!validate()) return;
     setLoading(true);
+    setAuthError(null);
     try {
       const { error } = await signIn(email.trim().toLowerCase(), password);
       if (error) {
-        Alert.alert('Login Failed', error);
+        const msg = error || 'Invalid email or password. Please try again.';
+        setAuthError(msg);
+        if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
+          window.alert(`Login Failed\n\n${msg}`);
+        } else {
+          Alert.alert('Login Failed', msg);
+        }
       }
     } catch (e: any) {
-      Alert.alert('Connection Error', e?.message ?? 'Cannot reach server. Check your internet.');
+      const msg = e?.message ?? 'Cannot reach server. Check your internet.';
+      setAuthError(msg);
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(`Connection Error\n\n${msg}`);
+      } else {
+        Alert.alert('Connection Error', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -108,11 +122,21 @@ export function LoginScreen({ navigation }: Props) {
             </View>
           )}
 
+          {!!authError && (
+            <View style={styles.authErrBanner}>
+              <Ionicons name="alert-circle-outline" size={16} color={COLORS.error} />
+              <Text style={styles.authErrText}>{authError}</Text>
+            </View>
+          )}
+
           <Input
             label="Email address"
             placeholder="Enter your email"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(v) => {
+              setEmail(v);
+              if (authError) setAuthError(null);
+            }}
             keyboardType="email-address"
             autoCapitalize="none"
             leftIcon="mail-outline"
@@ -122,7 +146,10 @@ export function LoginScreen({ navigation }: Props) {
             label="Password"
             placeholder="Enter your password"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(v) => {
+              setPassword(v);
+              if (authError) setAuthError(null);
+            }}
             isPassword
             leftIcon="lock-closed-outline"
             error={errors.password}
@@ -231,6 +258,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: FONTS.sizes.xs,
     flex: 1,
+  },
+  authErrBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.errorLight,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.error + '33',
+  },
+  authErrText: {
+    color: COLORS.error,
+    fontSize: FONTS.sizes.xs,
+    flex: 1,
+    lineHeight: 16,
   },
   title: {
     fontSize: FONTS.sizes['2xl'],

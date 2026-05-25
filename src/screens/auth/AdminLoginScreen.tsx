@@ -28,6 +28,7 @@ export function AdminLoginScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [awaitingProfile, setAwaitingProfile] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // After signIn, wait for the profile to finish loading, then verify admin role.
   // If the role is NOT 'admin', sign out immediately and show a clear error.
@@ -63,11 +64,18 @@ export function AdminLoginScreen({ navigation }: Props) {
     if (!validate()) return;
 
     setLoading(true);
+    setAuthError(null);
     const { error } = await signIn(email.trim().toLowerCase(), password);
     setLoading(false);
 
     if (error) {
-      Alert.alert('Admin Login Failed', error);
+      const msg = error || 'Invalid email or password. Please try again.';
+      setAuthError(msg);
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
+        window.alert(`Admin Login Failed\n\n${msg}`);
+      } else {
+        Alert.alert('Admin Login Failed', msg);
+      }
       return;
     }
 
@@ -117,11 +125,21 @@ export function AdminLoginScreen({ navigation }: Props) {
 
           <Text style={styles.title}>Admin Sign In</Text>
 
+          {!!authError && (
+            <View style={styles.authErrBanner}>
+              <Ionicons name="alert-circle-outline" size={16} color={COLORS.error} />
+              <Text style={styles.authErrText}>{authError}</Text>
+            </View>
+          )}
+
           <Input
             label="Admin Email"
             placeholder="Enter admin email"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(v) => {
+              setEmail(v);
+              if (authError) setAuthError(null);
+            }}
             keyboardType="email-address"
             autoCapitalize="none"
             leftIcon="mail-outline"
@@ -131,7 +149,10 @@ export function AdminLoginScreen({ navigation }: Props) {
             label="Password"
             placeholder="Enter password"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(v) => {
+              setPassword(v);
+              if (authError) setAuthError(null);
+            }}
             isPassword
             leftIcon="lock-closed-outline"
             error={errors.password}
@@ -242,6 +263,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.white,
     marginBottom: SPACING.xs,
+  },
+  authErrBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    backgroundColor: COLORS.errorLight,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.error + '33',
+    marginBottom: SPACING.xs,
+  },
+  authErrText: {
+    flex: 1,
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.error,
+    lineHeight: 16,
   },
   hint: {
     fontSize: FONTS.sizes.xs,

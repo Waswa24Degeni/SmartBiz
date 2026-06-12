@@ -95,8 +95,9 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [acting, setActing] = useState(false);
   const [docBusy, setDocBusy] = useState(false);
 
@@ -245,12 +246,13 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
   }, [business?.id]);
 
   useEffect(() => {
-    // Silent fetch keeps the Bills screen from flashing loading every time user navigates here.
-    reconcilePaidSales().finally(() => fetchSales(true));
+    if (ordersLoaded) {
+      reconcilePaidSales().finally(() => fetchSales(true));
+    }
     fetchProducts();
-  }, [fetchSales, fetchProducts, reconcilePaidSales]);
+  }, [fetchSales, fetchProducts, reconcilePaidSales, ordersLoaded]);
 
-  useRealtimeSubscription('bills-sales', 'sales', () => fetchSales(true), !!business?.id);
+  useRealtimeSubscription('bills-sales', 'sales', () => fetchSales(true), !!business?.id && ordersLoaded);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -646,6 +648,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
     setGuests('1');
     setNewMethod('cash');
 
+    setOrdersLoaded(true);
     fetchSales(true);
 
     if (newSale) {
@@ -820,6 +823,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
 
       const activeSale = (refreshedSale as Sale) ?? targetSale;
 
+      setOrdersLoaded(true);
       await fetchSales(true);
       setSelectedSale(activeSale);
       if (isMobile) setDetailVisible(true);
@@ -1343,13 +1347,29 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
 
           {filtered.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="receipt-outline" size={40} color={COLORS.textMuted} />
-              <Text style={styles.emptyText}>{search ? 'No matching orders' : 'No orders yet'}</Text>
-              {!search && (
-                <TouchableOpacity style={styles.emptyAddBtn} onPress={() => setNewOrderVisible(true)}>
-                  <Ionicons name="add" size={13} color={COLORS.white} />
-                  <Text style={styles.emptyAddText}>Create First Order</Text>
+              <Ionicons name={!ordersLoaded ? "cloud-download-outline" : "receipt-outline"} size={40} color={COLORS.textMuted} />
+              <Text style={styles.emptyText}>
+                {!ordersLoaded ? 'Orders not loaded yet' : (search ? 'No matching orders' : 'No orders yet')}
+              </Text>
+              {!ordersLoaded ? (
+                <TouchableOpacity
+                  style={styles.emptyAddBtn}
+                  onPress={() => {
+                    setOrdersLoaded(true);
+                    setLoading(true);
+                    fetchSales();
+                  }}
+                >
+                  <Ionicons name="cloud-download-outline" size={14} color={COLORS.white} />
+                  <Text style={styles.emptyAddText}>Load Orders</Text>
                 </TouchableOpacity>
+              ) : (
+                !search && (
+                  <TouchableOpacity style={styles.emptyAddBtn} onPress={() => setNewOrderVisible(true)}>
+                    <Ionicons name="add" size={13} color={COLORS.white} />
+                    <Text style={styles.emptyAddText}>Create First Order</Text>
+                  </TouchableOpacity>
+                )
               )}
             </View>
           ) : (

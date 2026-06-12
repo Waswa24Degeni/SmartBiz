@@ -32,7 +32,7 @@ const PLANS: { id: string; name: string; priceLabel: string; numericPrice: numbe
   { id: 'free',     name: 'Free',     priceLabel: 'TZS 0',        numericPrice: 0,     color: '#6B7280', icon: 'gift-outline',     features: ['1 user', '100 products', 'Basic reports'] },
   { id: 'starter',  name: 'Starter',  priceLabel: 'TZS 15,000',  numericPrice: 15000, color: '#3B82F6', icon: 'rocket-outline',   features: ['3 users', '500 products', 'Advanced reports'] },
   { id: 'business', name: 'Business', priceLabel: 'TZS 35,000',  numericPrice: 35000, color: '#C49A2A', icon: 'briefcase-outline', features: ['10 users', 'Unlimited products', 'Priority support'] },
-  { id: 'premium',  name: 'Premium',  priceLabel: 'TZS 80,000',  numericPrice: 80000, color: '#1B3A2D', icon: 'diamond-outline',   features: ['Unlimited users', 'API access', 'Dedicated manager'] },
+  { id: 'premium',  name: 'Premium',  priceLabel: 'TZS 80,000',  numericPrice: 80000, color: '#0D9488', icon: 'diamond-outline',   features: ['Unlimited users', 'API access', 'Dedicated manager'] },
 ];
 
 const MOBILE_MONEY_MIN_AMOUNT = 500;

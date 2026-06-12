@@ -10,7 +10,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, RADIUS, SPACING, FONTS, WEB_OUTLINE_NONE } from '../../lib/constants';
+import { COLORS, RADIUS, SPACING, FONTS, WEB_OUTLINE_NONE, SHADOWS } from '../../lib/constants';
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -50,7 +50,7 @@ export function Input({
 
   const animatedBorderColor = borderAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [error ? COLORS.error : COLORS.border, COLORS.primary],
+    outputRange: [error ? COLORS.error : 'transparent', COLORS.primary],
   });
 
   const effectiveRightIcon = isPassword
@@ -116,15 +116,16 @@ const styles = StyleSheet.create({
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.surfaceAlt,
     borderWidth: 1.5,
-    borderColor: COLORS.border,
+    borderColor: 'transparent',
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
-    minHeight: 44,
+    minHeight: 48,
   },
   inputWrapFocused: {
-    backgroundColor: COLORS.surfaceHover,
+    backgroundColor: COLORS.surface,
+    ...SHADOWS.sm,
   },
   input: {
     flex: 1,

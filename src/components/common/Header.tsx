@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, SPACING, FONTS, BREAKPOINTS } from '../../lib/constants';
+import { COLORS, SPACING, FONTS, BREAKPOINTS, SHADOWS } from '../../lib/constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface HeaderProps {
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: COLORS.background,
     paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
+    paddingBottom: SPACING.lg,
   },
   containerMobile: {
     paddingHorizontal: SPACING.base,
@@ -177,11 +177,14 @@ const styles = StyleSheet.create({
   iconBtn: {
     marginLeft: SPACING.sm,
     padding: SPACING.xs,
-    minWidth: 40,
-    minHeight: 40,
+    minWidth: 44,
+    minHeight: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    ...SHADOWS.xs,
   },
   badgeDot: {
     position: 'absolute',

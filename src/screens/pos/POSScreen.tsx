@@ -632,7 +632,7 @@ export function POSScreen() {
         <View style={{ flex: 1 }} />
         <Pressable style={styles.cartChip} onPress={() => isMobile && setMobilePane('cart')}>
           <LinearGradient
-            colors={['#2C6E4F', '#1B3A2D']}
+            colors={['#14B8A6', '#0D9488']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.cartChipGradient}
@@ -750,7 +750,7 @@ export function POSScreen() {
             ) : (
               filteredProducts.map((p) => {
                   const initial = p.name.charAt(0).toUpperCase();
-                  const colorPalette = ['#1B3A2D', '#C49A2A', '#2563EB', '#059669', '#D97706', '#DC2626'];
+                  const colorPalette = ['#0D9488', '#F59E0B', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
                   const dotColor = colorPalette[p.name.charCodeAt(0) % colorPalette.length];
                   const lowStock = p.stock_quantity <= Math.max(1, p.low_stock_threshold ?? 0);
 
@@ -822,7 +822,7 @@ export function POSScreen() {
                         <Text style={styles.productPrice}>{currency} {Number(p.selling_price).toLocaleString()}</Text>
                         <View style={styles.addBtn}>
                           <LinearGradient
-                            colors={['#2C6E4F', '#1B3A2D']}
+                            colors={['#14B8A6', '#0D9488']}
                             style={[StyleSheet.absoluteFill, { borderRadius: 10 }]}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}

@@ -103,7 +103,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
       {/* Logo / business header */}
       <View style={[styles.logo, collapsed && styles.logoCollapsed]}>
         <LinearGradient
-          colors={['#C49A2A', '#A67C1E']}
+          colors={['#FBBF24', '#D97706']}
           style={styles.logoIcon}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -185,7 +185,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#172F24',
+    backgroundColor: '#0F172A',
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.base,
   },
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xs,
   },
   navItemActive: {
-    backgroundColor: 'rgba(196,154,42,0.15)',
+    backgroundColor: 'rgba(245,158,11,0.15)',
   },
   navItemPressed: {
     backgroundColor: 'rgba(255,255,255,0.05)',

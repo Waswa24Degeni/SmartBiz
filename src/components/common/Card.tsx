@@ -67,21 +67,21 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
-    padding: SPACING.base,
+    padding: SPACING.lg,
     marginBottom: SPACING.md,
     borderWidth: 1,
-    borderColor: COLORS.borderLight,
+    borderColor: 'rgba(255,255,255,0.8)', // Glassy subtle border instead of solid grey
     overflow: 'hidden',
-    ...SHADOWS.sm,
+    ...SHADOWS.md, // Soft floating shadow
   } as ViewStyle,
   cardWithAccent: {
     paddingTop: SPACING.xs,
   },
   accentBar: {
-    height: 3,
-    borderRadius: RADIUS.xs,
-    marginBottom: SPACING.md,
-    marginHorizontal: -SPACING.base,
+    height: 4,
+    borderRadius: RADIUS.sm,
+    marginBottom: SPACING.lg,
+    marginHorizontal: -SPACING.lg,
     marginTop: -SPACING.xs,
   },
   header: {

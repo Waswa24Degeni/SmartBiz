@@ -67,9 +67,9 @@ export function Button({
 
   const handlePressIn = () => {
     Animated.spring(scale, {
-      toValue: 0.97,
+      toValue: 0.95,
       useNativeDriver: true,
-      ...ANIM.springFast,
+      ...ANIM.springBouncy,
     }).start();
   };
 
@@ -77,7 +77,7 @@ export function Button({
     Animated.spring(scale, {
       toValue: 1,
       useNativeDriver: true,
-      ...ANIM.springFast,
+      ...ANIM.springBouncy,
     }).start();
   };
 
@@ -154,8 +154,8 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
-    minWidth: 44,
+    minHeight: 48,
+    minWidth: 48,
     overflow: 'hidden',
   } as ViewStyle,
   gradientWrapper: {
@@ -183,8 +183,8 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   text: {
-    fontWeight: '600',
-    letterSpacing: 0.1,
+    fontWeight: '700',
+    letterSpacing: 0.3,
     textAlign: 'center',
   } as TextStyle,
 });

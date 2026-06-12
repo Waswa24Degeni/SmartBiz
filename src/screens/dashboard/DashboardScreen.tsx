@@ -209,7 +209,7 @@ export function DashboardScreen() {
                 >
                   {activeTab === t && (
                     <LinearGradient
-                      colors={['#2C6E4F', '#1B3A2D']}
+                      colors={['#14B8A6', '#0D9488']}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={StyleSheet.absoluteFill}
@@ -240,7 +240,7 @@ export function DashboardScreen() {
               >
                 {activeTab === t && (
                   <LinearGradient
-                    colors={['#2C6E4F', '#1B3A2D']}
+                    colors={['#14B8A6', '#0D9488']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={StyleSheet.absoluteFill}
@@ -258,7 +258,7 @@ export function DashboardScreen() {
         {([
           { label: 'Revenue',   value: `TZS ${stats.today_sales >= 1000 ? (stats.today_sales / 1000).toFixed(1) + 'K' : stats.today_sales.toLocaleString()}`, icon: 'cash-outline',    color: COLORS.success,  gradColors: ['#34D399', '#059669'] as const, bgTint: '#D1FAE5' },
           { label: 'Orders',    value: stats.total_orders.toString(),    icon: 'receipt-outline', color: COLORS.accent,   gradColors: ['#E8B84B', '#C49A2A'] as const, bgTint: '#FEF3C7' },
-          { label: 'Customers', value: stats.new_customers.toString(),   icon: 'people-outline',  color: COLORS.primary,  gradColors: ['#2C6E4F', '#1B3A2D'] as const, bgTint: '#D1FAE5' },
+          { label: 'Customers', value: stats.new_customers.toString(),   icon: 'people-outline',  color: COLORS.primary,  gradColors: ['#14B8A6', '#0D9488'] as const, bgTint: '#D1FAE5' },
           { label: 'Low Stock', value: stats.low_stock_count.toString(), icon: 'warning-outline', color: COLORS.warning,  gradColors: ['#FBB960', '#D97706'] as const, bgTint: '#FEF3C7' },
         ] as const).map(s => (
           <View
@@ -302,7 +302,7 @@ export function DashboardScreen() {
               return (
                 <View key={`${chartData.labels[i]}-${i}`} style={styles.nativeChartCol}>
                   <LinearGradient
-                    colors={['#2C6E4F', '#1B3A2D']}
+                    colors={['#14B8A6', '#0D9488']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 0, y: 1 }}
                     style={[styles.nativeChartBar, { height: h }]}
@@ -319,7 +319,7 @@ export function DashboardScreen() {
           <Card style={styles.revenueCard} title="Period Summary">
             <View style={styles.revenueCircle}>
               <LinearGradient
-                colors={['#2C6E4F', '#1B3A2D']}
+                colors={['#14B8A6', '#0D9488']}
                 style={[StyleSheet.absoluteFill, { borderRadius: 70 }]}
               />
               <Text style={styles.revenueAmount}>

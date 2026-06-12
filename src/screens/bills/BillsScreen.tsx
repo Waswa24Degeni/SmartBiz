@@ -184,6 +184,24 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
     reconcilingRef.current = true;
     setReconciling(true);
     try {
+      // 0) Actively verify any pending mobile money payments with Snippe
+      const { data: pendingPayments } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('business_id', business.id)
+        .eq('payment_type', 'pos')
+        .in('status', ['pending', 'processing'])
+        .not('gateway_reference', 'is', null)
+        .limit(10);
+
+      if (pendingPayments && pendingPayments.length > 0) {
+        await Promise.all(
+          pendingPayments.map((p) =>
+            supabase.functions.invoke('verify-payment', { body: { payment_id: p.id } }).catch(() => null)
+          )
+        );
+      }
+
       // 1) If a sale is already paid, ensure status is completed.
       await supabase
         .from('sales')

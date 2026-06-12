@@ -496,6 +496,30 @@ export function POSScreen() {
     let stopped = false;
 
     const pollStatus = async () => {
+      if (stopped) return;
+
+      const { data: initialPayRow } = await supabase
+        .from('payments')
+        .select('id, status')
+        .eq('pos_order_id', pendingSaleId)
+        .order('initiated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (stopped) return;
+
+      if (initialPayRow?.id && (initialPayRow.status === 'processing' || initialPayRow.status === 'pending')) {
+        try {
+          await supabase.functions.invoke('verify-payment', {
+            body: { payment_id: initialPayRow.id },
+          });
+        } catch (e) {
+          console.warn('verify-payment invoke failed', e);
+        }
+      }
+
+      if (stopped) return;
+
       const { data: saleRow } = await supabase
         .from('sales')
         .select('payment_status, status')

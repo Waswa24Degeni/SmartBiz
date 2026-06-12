@@ -19,6 +19,7 @@ import { WalletScreen } from './wallet/WalletScreen';
 import { NotificationsScreen } from './notifications/NotificationsScreen';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Route = 'Dashboard' | 'Inventory' | 'POS' | 'Reports' | 'Messages' | 'Bills' | 'Customers' | 'Wallet' | 'Settings' | 'Notifications' | 'Support' | 'Staff';
 
@@ -53,6 +54,7 @@ const NAV_ITEMS: { label: string; icon: string; route: Route }[] = [
 export function MainLayout() {
   const { user, business } = useAuth();
   const [route, setRoute] = useState<Route>('Dashboard');
+  const [isRouteLoaded, setIsRouteLoaded] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [billPrefillProduct, setBillPrefillProduct] = useState<Product | null>(null);
   const [billPrefillNonce, setBillPrefillNonce] = useState(0);
@@ -65,6 +67,15 @@ export function MainLayout() {
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
   const drawerWidth = Math.min(Math.max(width * 0.86, 240), 320);
+
+  React.useEffect(() => {
+    AsyncStorage.getItem('smartbiz_last_route').then((savedRoute) => {
+      if (savedRoute && ROUTE_PERMISSIONS[savedRoute as Route]) {
+        setRoute(savedRoute as Route);
+      }
+      setIsRouteLoaded(true);
+    });
+  }, []);
 
   React.useEffect(() => {
     const loadStaffPerms = async () => {
@@ -172,7 +183,9 @@ export function MainLayout() {
   React.useEffect(() => {
     if (allowedNavItems.length === 0) return;
     if (!hasAccess(route)) {
-      setRoute(allowedNavItems[0].route);
+      const fallback = allowedNavItems[0].route;
+      setRoute(fallback);
+      AsyncStorage.setItem('smartbiz_last_route', fallback).catch(() => {});
       setSelectedCategory(null);
     }
   }, [route, hasAccess, allowedNavItems]);
@@ -202,6 +215,7 @@ export function MainLayout() {
     const next = r as Route;
     if (!hasAccess(next)) return;
     setRoute(next);
+    AsyncStorage.setItem('smartbiz_last_route', next).catch(() => {});
     setSelectedCategory(null);
     if (next !== 'Bills') {
       setBillPrefillProduct(null);
@@ -214,11 +228,14 @@ export function MainLayout() {
     setBillPrefillProduct(product);
     setBillPrefillNonce((n) => n + 1);
     setRoute('Bills');
+    AsyncStorage.setItem('smartbiz_last_route', 'Bills').catch(() => {});
     setSelectedCategory(null);
     setDrawerOpen(false);
   };
 
   const renderContent = () => {
+    if (!isRouteLoaded) return null;
+    
     if (!hasAccess(route)) {
       return <NoAccessScreen />;
     }

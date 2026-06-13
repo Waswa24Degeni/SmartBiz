@@ -22,19 +22,19 @@ import { useRealtimeSubscription } from '../../lib/hooks';
 const PLAN_META: Record<string, { price: string; period: string; color: string; bgColor: string; features: string[]; popular?: boolean }> = {
   free: {
     price: 'TZS 0', period: 'Forever', color: COLORS.textSecondary, bgColor: '#F3F4F6',
-    features: ['1 user', '100 products', 'Basic reports', 'Mobile app'],
+    features: ['1 Shop', '1 user', '100 products', 'Basic reports', 'Mobile app'],
   },
   starter: {
     price: 'TZS 15,000', period: '/month', color: COLORS.info, bgColor: COLORS.infoLight,
-    features: ['3 users', '500 products', 'Advanced reports', 'Email support', 'Inventory alerts'],
+    features: ['2 Shops', '3 users', '500 products', 'Advanced reports', 'Email support'],
   },
   business: {
     price: 'TZS 35,000', period: '/month', color: COLORS.success, bgColor: COLORS.successLight, popular: true,
-    features: ['10 users', 'Unlimited products', 'Full analytics', 'Priority support', 'Staff management', 'Multi-branch'],
+    features: ['2 Shops', '10 users', 'Unlimited products', 'Full analytics', 'Priority support', 'Staff management'],
   },
   premium: {
     price: 'TZS 80,000', period: '/month', color: COLORS.accent, bgColor: COLORS.warningLight,
-    features: ['Unlimited users', 'Unlimited products', 'Custom reports', '24/7 support', 'API access', 'White label', 'Dedicated manager'],
+    features: ['2 Shops', 'Unlimited users', 'Unlimited products', 'Custom reports', '24/7 support', 'API access'],
   },
 };
 

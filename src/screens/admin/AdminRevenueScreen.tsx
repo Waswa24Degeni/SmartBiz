@@ -15,17 +15,9 @@ import { supabase } from '../../lib/supabase';
 import { useRealtimeSubscription } from '../../lib/hooks';
 
 type PeriodTab = 'Today' | 'Week' | 'Month' | 'Year';
-type SectionTab = 'Sales' | 'Subscriptions' | 'By Business';
+type SectionTab = 'Subscriptions' | 'By Business';
 
-interface RevenueRow {
-  id: string;
-  business_id: string;
-  total: number;
-  payment_status: string;
-  payment_method: string;
-  created_at: string;
-  businesses?: { name: string }[] | null;
-}
+
 
 interface PaymentRow {
   id: string;
@@ -39,17 +31,7 @@ interface PaymentRow {
   metadata?: { plan?: string } | null;
 }
 
-interface RevenueStats {
-  grossRevenue: number;
-  paidRevenue: number;
-  pendingRevenue: number;
-  totalSales: number;
-  avgOrderValue: number;
-  topBusinesses: { name: string; amount: number; count: number }[];
-  paymentMix: { method: string; amount: number; count: number }[];
-  recentPayments: RevenueRow[];
-  chartSeries: { day: string; amount: number }[];
-}
+
 
 interface SubscriptionStats {
   totalRevenue: number;
@@ -60,7 +42,7 @@ interface SubscriptionStats {
 }
 
 const PERIOD_TABS: PeriodTab[] = ['Today', 'Week', 'Month', 'Year'];
-const SECTION_TABS: SectionTab[] = ['Sales', 'Subscriptions', 'By Business'];
+const SECTION_TABS: SectionTab[] = ['Subscriptions', 'By Business'];
 
 const PAYMENT_LABELS: Record<string, string> = {
   cash: 'Cash',
@@ -94,37 +76,14 @@ function getFromDate(tab: PeriodTab): Date {
 
 export function AdminRevenueScreen() {
   const [tab, setTab] = useState<PeriodTab>('Month');
-  const [sectionTab, setSectionTab] = useState<SectionTab>('Sales');
-  const [loading, setLoading] = useState(true);
+  const [sectionTab, setSectionTab] = useState<SectionTab>('Subscriptions');
+  const [loading, setLoading] = useState(false);
   const [payLoading, setPayLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [rows, setRows] = useState<RevenueRow[]>([]);
   const [payRows, setPayRows] = useState<PaymentRow[]>([]);
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
 
-  const fetchRevenue = useCallback(async () => {
-    setLoading(true);
-    setFetchError(null);
-
-    const fromDate = getFromDate(tab);
-    const { data, error } = await supabase
-      .from('sales')
-      .select('id, business_id, total, payment_status, payment_method, created_at, businesses(name)')
-      .gte('created_at', fromDate.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1200);
-
-    if (error) {
-      console.error('[AdminRevenue] sales fetch error:', error);
-      setFetchError(error.message);
-      setLoading(false);
-      return;
-    }
-
-    setRows((data as unknown as RevenueRow[]) ?? []);
-    setLoading(false);
-  }, [tab]);
 
   const fetchPayments = useCallback(async () => {
     setPayLoading(true);
@@ -162,61 +121,12 @@ export function AdminRevenueScreen() {
   }, [tab]);
 
   useEffect(() => {
-    fetchRevenue();
     fetchPayments();
-  }, [fetchRevenue, fetchPayments]);
+  }, [fetchPayments]);
 
-  useRealtimeSubscription('admin-revenue-sales', 'sales', fetchRevenue);
   useRealtimeSubscription('admin-revenue-payments', 'payments', fetchPayments);
 
-  const stats: RevenueStats = useMemo(() => {
-    const grossRevenue = rows.reduce((sum, row) => sum + (Number(row.total) || 0), 0);
-    const paidRows = rows.filter(row => row.payment_status === 'paid');
-    const paidRevenue = paidRows.reduce((sum, row) => sum + (Number(row.total) || 0), 0);
-    const pendingRevenue = rows
-      .filter(row => row.payment_status !== 'paid')
-      .reduce((sum, row) => sum + (Number(row.total) || 0), 0);
 
-    const byBusiness: Record<string, { name: string; amount: number; count: number }> = {};
-    const byMethod: Record<string, { method: string; amount: number; count: number }> = {};
-    const byDay: Record<string, number> = {};
-
-    for (const row of rows) {
-      const amount = Number(row.total) || 0;
-      const businessName = row.businesses?.[0]?.name ?? 'Unknown Business';
-
-      if (!byBusiness[row.business_id]) {
-        byBusiness[row.business_id] = { name: businessName, amount: 0, count: 0 };
-      }
-      byBusiness[row.business_id].amount += amount;
-      byBusiness[row.business_id].count += 1;
-
-      const method = row.payment_method ?? 'cash';
-      if (!byMethod[method]) {
-        byMethod[method] = { method, amount: 0, count: 0 };
-      }
-      byMethod[method].amount += amount;
-      byMethod[method].count += 1;
-
-      const dayKey = format(new Date(row.created_at), tab === 'Year' ? 'MMM yyyy' : 'dd MMM');
-      byDay[dayKey] = (byDay[dayKey] ?? 0) + amount;
-    }
-
-    return {
-      grossRevenue,
-      paidRevenue,
-      pendingRevenue,
-      totalSales: rows.length,
-      avgOrderValue: rows.length ? grossRevenue / rows.length : 0,
-      topBusinesses: Object.values(byBusiness).sort((a, b) => b.amount - a.amount).slice(0, 8),
-      paymentMix: Object.values(byMethod).sort((a, b) => b.amount - a.amount),
-      recentPayments: rows.slice(0, 8),
-      chartSeries: Object.entries(byDay)
-        .map(([day, amount]) => ({ day, amount }))
-        .sort((a, b) => a.day.localeCompare(b.day))
-        .slice(-10),
-    };
-  }, [rows, tab]);
 
   const subStats: SubscriptionStats = useMemo(() => {
     const completedRows = payRows.filter(row => row.status === 'completed' || row.status === 'paid');
@@ -245,32 +155,9 @@ export function AdminRevenueScreen() {
     const summaryMap: Record<string, {
       business_id: string;
       name: string;
-      salesTotal: number;
-      salesCount: number;
       subTotal: number;
       subCount: number;
-      total: number;
     }> = {};
-
-    for (const row of rows) {
-      const businessId = row.business_id;
-      const name = row.businesses?.[0]?.name ?? 'Unknown Business';
-      if (!summaryMap[businessId]) {
-        summaryMap[businessId] = {
-          business_id: businessId,
-          name,
-          salesTotal: 0,
-          salesCount: 0,
-          subTotal: 0,
-          subCount: 0,
-          total: 0,
-        };
-      }
-      const amount = Number(row.total) || 0;
-      summaryMap[businessId].salesTotal += amount;
-      summaryMap[businessId].salesCount += 1;
-      summaryMap[businessId].total += amount;
-    }
 
     for (const row of payRows) {
       const businessId = row.business_id;
@@ -278,23 +165,17 @@ export function AdminRevenueScreen() {
         summaryMap[businessId] = {
           business_id: businessId,
           name: row.business_name,
-          salesTotal: 0,
-          salesCount: 0,
           subTotal: 0,
           subCount: 0,
-          total: 0,
         };
       }
       summaryMap[businessId].name = summaryMap[businessId].name || row.business_name;
       summaryMap[businessId].subTotal += row.amount;
       summaryMap[businessId].subCount += 1;
-      summaryMap[businessId].total += row.amount;
     }
 
-    return Object.values(summaryMap).sort((a, b) => b.total - a.total);
-  }, [rows, payRows]);
-
-  const chartMax = Math.max(...stats.chartSeries.map(series => series.amount), 1);
+    return Object.values(summaryMap).sort((a, b) => b.subTotal - a.subTotal);
+  }, [payRows]);
 
   return (
     <View style={styles.screen}>
@@ -333,135 +214,13 @@ export function AdminRevenueScreen() {
           <Text style={styles.errorTitle}>Unable to load revenue analytics</Text>
           <Text style={styles.errorMsg}>{fetchError}</Text>
           <Text style={styles.errorHint}>Run scripts/fix-admin-rls.sql and ensure admin has select access to sales and payments.</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => { fetchRevenue(); fetchPayments(); }}>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => fetchPayments()}>
             <Text style={styles.retryBtnText}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <>
-          {sectionTab === 'Sales' && (
-            <>
-              <View style={styles.metricsGrid}>
-                <View style={styles.metricCard}>
-                  <View style={[styles.metricIcon, { backgroundColor: COLORS.successLight }]}>
-                    <Ionicons name="cash-outline" size={18} color={COLORS.success} />
-                  </View>
-                  <Text style={styles.metricLabel}>Gross Revenue</Text>
-                  <Text style={styles.metricValue}>TZS {stats.grossRevenue.toLocaleString()}</Text>
-                </View>
 
-                <View style={styles.metricCard}>
-                  <View style={[styles.metricIcon, { backgroundColor: COLORS.infoLight }]}>
-                    <Ionicons name="checkmark-done-outline" size={18} color={COLORS.info} />
-                  </View>
-                  <Text style={styles.metricLabel}>Paid Revenue</Text>
-                  <Text style={styles.metricValue}>TZS {stats.paidRevenue.toLocaleString()}</Text>
-                </View>
-
-                <View style={styles.metricCard}>
-                  <View style={[styles.metricIcon, { backgroundColor: COLORS.warningLight }]}>
-                    <Ionicons name="time-outline" size={18} color={COLORS.warning} />
-                  </View>
-                  <Text style={styles.metricLabel}>Pending Revenue</Text>
-                  <Text style={styles.metricValue}>TZS {stats.pendingRevenue.toLocaleString()}</Text>
-                </View>
-
-                <View style={styles.metricCard}>
-                  <View style={[styles.metricIcon, { backgroundColor: COLORS.accent + '20' }]}>
-                    <Ionicons name="receipt-outline" size={18} color={COLORS.accent} />
-                  </View>
-                  <Text style={styles.metricLabel}>Avg Order Value</Text>
-                  <Text style={styles.metricValue}>TZS {Math.round(stats.avgOrderValue).toLocaleString()}</Text>
-                  <Text style={styles.metricSmall}>{stats.totalSales.toLocaleString()} sales</Text>
-                </View>
-              </View>
-
-              <View style={[styles.row, isMobile && styles.rowMobile]}>
-                <View style={[styles.card, { flex: 1.4 }]}> 
-                  <Text style={styles.cardTitle}>Revenue Trend</Text>
-                  <Text style={styles.cardSubtitle}>Last {stats.chartSeries.length} intervals</Text>
-                  <View style={styles.chartWrap}>
-                    {stats.chartSeries.length === 0 ? (
-                      <Text style={styles.emptyText}>No data for selected period</Text>
-                    ) : (
-                      <View style={styles.barRow}>
-                        {stats.chartSeries.map(point => {
-                          const height = Math.max(8, Math.round((point.amount / chartMax) * 120));
-                          return (
-                            <View key={point.day} style={styles.barCol}>
-                              <View style={[styles.bar, { height }]} />
-                              <Text style={styles.barLabel} numberOfLines={1}>{point.day}</Text>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                <View style={[styles.card, { flex: 1 }]}> 
-                  <Text style={styles.cardTitle}>Payment Mix</Text>
-                  <Text style={styles.cardSubtitle}>By payment method</Text>
-                  {stats.paymentMix.length === 0 ? (
-                    <Text style={styles.emptyText}>No payments yet</Text>
-                  ) : stats.paymentMix.map(item => (
-                    <View key={item.method} style={styles.mixRow}>
-                      <View style={styles.mixLeft}>
-                        <View style={[styles.mixDot, { backgroundColor: PAYMENT_COLORS[item.method] ?? COLORS.textMuted }]} />
-                        <Text style={styles.mixLabel}>{PAYMENT_LABELS[item.method] ?? item.method}</Text>
-                      </View>
-                      <View>
-                        <Text style={styles.mixValue}>TZS {Math.round(item.amount).toLocaleString()}</Text>
-                        <Text style={styles.mixCount}>{item.count} txns</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              <View style={[styles.row, isMobile && styles.rowMobile]}>
-                <View style={[styles.card, { flex: 1 }]}> 
-                  <Text style={styles.cardTitle}>Top Businesses</Text>
-                  <Text style={styles.cardSubtitle}>Highest revenue contributors</Text>
-                  {stats.topBusinesses.length === 0 ? (
-                    <Text style={styles.emptyText}>No business revenue yet</Text>
-                  ) : stats.topBusinesses.map((business, index) => (
-                    <View key={`${business.name}-${index}`} style={styles.listRow}>
-                      <View style={styles.rankBadge}><Text style={styles.rankText}>{index + 1}</Text></View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.bizName} numberOfLines={1}>{business.name}</Text>
-                        <Text style={styles.bizMeta}>{business.count} sales</Text>
-                      </View>
-                      <Text style={styles.bizAmount}>TZS {Math.round(business.amount).toLocaleString()}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <View style={[styles.card, { flex: 1.25 }]}> 
-                  <Text style={styles.cardTitle}>Recent Sales Payments</Text>
-                  <Text style={styles.cardSubtitle}>Live from sales stream</Text>
-                  {stats.recentPayments.length === 0 ? (
-                    <Text style={styles.emptyText}>No recent payments</Text>
-                  ) : stats.recentPayments.map(row => (
-                    <View key={row.id} style={styles.paymentRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.paymentBiz} numberOfLines={1}>{row.businesses?.[0]?.name ?? 'Unknown Business'}</Text>
-                        <Text style={styles.paymentMeta}>
-                          {format(new Date(row.created_at), 'dd MMM yyyy, HH:mm')} · {PAYMENT_LABELS[row.payment_method] ?? row.payment_method}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.paymentAmount}>TZS {Math.round(Number(row.total) || 0).toLocaleString()}</Text>
-                        <View style={[styles.statusBadge, { backgroundColor: row.payment_status === 'paid' ? COLORS.successLight : COLORS.warningLight }]}> 
-                          <Text style={[styles.statusText, { color: row.payment_status === 'paid' ? COLORS.success : COLORS.warning }]}>{row.payment_status}</Text>
-                        </View>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </>
-          )}
 
           {sectionTab === 'Subscriptions' && (
             <>
@@ -569,62 +328,40 @@ export function AdminRevenueScreen() {
                   <View style={[styles.metricIcon, { backgroundColor: COLORS.successLight }]}>
                     <Ionicons name="storefront-outline" size={18} color={COLORS.success} />
                   </View>
-                  <Text style={styles.metricLabel}>Businesses Active</Text>
+                  <Text style={styles.metricLabel}>Subscribed Businesses</Text>
                   <Text style={styles.metricValue}>{businessSummaries.length.toLocaleString()}</Text>
-                </View>
-                <View style={styles.metricCard}>
-                  <View style={[styles.metricIcon, { backgroundColor: COLORS.infoLight }]}>
-                    <Ionicons name="trending-up-outline" size={18} color={COLORS.info} />
-                  </View>
-                  <Text style={styles.metricLabel}>Sales Revenue</Text>
-                  <Text style={styles.metricValue}>TZS {businessSummaries.reduce((sum, item) => sum + item.salesTotal, 0).toLocaleString()}</Text>
                 </View>
                 <View style={styles.metricCard}>
                   <View style={[styles.metricIcon, { backgroundColor: COLORS.accent + '20' }]}>
                     <Ionicons name="card-outline" size={18} color={COLORS.accent} />
                   </View>
-                  <Text style={styles.metricLabel}>Plan Fees</Text>
+                  <Text style={styles.metricLabel}>Total Plan Fees</Text>
                   <Text style={styles.metricValue}>TZS {businessSummaries.reduce((sum, item) => sum + item.subTotal, 0).toLocaleString()}</Text>
-                </View>
-                <View style={styles.metricCard}>
-                  <View style={[styles.metricIcon, { backgroundColor: COLORS.warningLight }]}>
-                    <Ionicons name="layers-outline" size={18} color={COLORS.warning} />
-                  </View>
-                  <Text style={styles.metricLabel}>Combined Total</Text>
-                  <Text style={styles.metricValue}>TZS {businessSummaries.reduce((sum, item) => sum + item.total, 0).toLocaleString()}</Text>
                 </View>
               </View>
 
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>All Payments per Business</Text>
-                <Text style={styles.cardSubtitle}>Sales revenue + plan subscription payments combined</Text>
+                <Text style={styles.cardTitle}>Plan Payments per Business</Text>
+                <Text style={styles.cardSubtitle}>Total subscription payments combined</Text>
                 {businessSummaries.length === 0 ? (
                   <Text style={styles.emptyText}>No data for this period</Text>
                 ) : isMobile ? businessSummaries.map(item => (
                   <View key={item.business_id} style={styles.mobileTxCard}>
                     <Text style={styles.mobileTxTitle}>{item.name}</Text>
-                    <Text style={styles.mobileTxMeta}>Sales total: TZS {Math.round(item.salesTotal).toLocaleString()} ({item.salesCount} orders)</Text>
                     <Text style={styles.mobileTxMeta}>Plan fees: TZS {Math.round(item.subTotal).toLocaleString()} ({item.subCount} subs)</Text>
-                    <Text style={styles.mobileTxAmount}>Grand total: TZS {Math.round(item.total).toLocaleString()}</Text>
                   </View>
                 )) : (
                   <>
                     <View style={[styles.txRow, styles.txHead]}>
-                      <Text style={[styles.txCell, { flex: 1.8 }]}>Business</Text>
-                      <Text style={[styles.txCell, { flex: 1 }]}>Sales Total</Text>
-                      <Text style={[styles.txCell, { flex: 0.7 }]}>Orders</Text>
-                      <Text style={[styles.txCell, { flex: 1 }]}>Plan Fees</Text>
-                      <Text style={[styles.txCell, { flex: 0.7 }]}>Subs</Text>
-                      <Text style={[styles.txCell, { flex: 1.1 }]}>Grand Total</Text>
+                      <Text style={[styles.txCell, { flex: 2 }]}>Business</Text>
+                      <Text style={[styles.txCell, { flex: 1.5 }]}>Plan Fees</Text>
+                      <Text style={[styles.txCell, { flex: 1 }]}>Sub Count</Text>
                     </View>
                     {businessSummaries.map((item, index) => (
                       <View key={item.business_id} style={[styles.txRow, index % 2 === 1 && styles.txRowAlt]}>
-                        <Text style={[styles.txCell, { flex: 1.8, color: COLORS.text, fontWeight: '600' }]} numberOfLines={1}>{item.name}</Text>
-                        <Text style={[styles.txCell, { flex: 1 }]}>{item.salesTotal > 0 ? `TZS ${item.salesTotal.toLocaleString()}` : '—'}</Text>
-                        <Text style={[styles.txCell, { flex: 0.7 }]}>{item.salesCount > 0 ? item.salesCount : '—'}</Text>
-                        <Text style={[styles.txCell, { flex: 1 }]}>{item.subTotal > 0 ? `TZS ${item.subTotal.toLocaleString()}` : '—'}</Text>
-                        <Text style={[styles.txCell, { flex: 0.7 }]}>{item.subCount > 0 ? item.subCount : '—'}</Text>
-                        <Text style={[styles.txCell, { flex: 1.1, color: COLORS.text, fontWeight: '700' }]}>{`TZS ${item.total.toLocaleString()}`}</Text>
+                        <Text style={[styles.txCell, { flex: 2, color: COLORS.text, fontWeight: '600' }]} numberOfLines={1}>{item.name}</Text>
+                        <Text style={[styles.txCell, { flex: 1.5 }]}>{item.subTotal > 0 ? `TZS ${item.subTotal.toLocaleString()}` : '—'}</Text>
+                        <Text style={[styles.txCell, { flex: 1 }]}>{item.subCount > 0 ? item.subCount : '—'}</Text>
                       </View>
                     ))}
                   </>

@@ -33,6 +33,7 @@ interface AdminStats {
   totalBusinesses: number;
   activeUsers: number;
   activeSubscriptions: number;
+  subscriptionRevenue: number;
   recentBusinesses: any[];
   planDist: { plan: string; count: number; color: string }[];
 }
@@ -47,6 +48,7 @@ export function AdminDashboardScreen() {
     totalBusinesses: 0,
     activeUsers: 0,
     activeSubscriptions: 0,
+    subscriptionRevenue: 0,
     recentBusinesses: [],
     planDist: [],
   });
@@ -60,6 +62,7 @@ export function AdminDashboardScreen() {
       { count: activeSubs },
       { data: recentBiz },
       { data: planData },
+      { data: paymentData },
     ] = await Promise.all([
       supabase.from('businesses').select('id', { count: 'exact', head: true }),
       supabase.from('users').select('id', { count: 'exact', head: true }),
@@ -69,6 +72,7 @@ export function AdminDashboardScreen() {
         .order('created_at', { ascending: false })
         .limit(5),
       supabase.from('subscriptions').select('plan'),
+      supabase.from('payments').select('amount').eq('payment_type', 'subscription').in('status', ['paid', 'completed'])
     ]);
 
     if (bizErr || userErr) {
@@ -78,6 +82,9 @@ export function AdminDashboardScreen() {
       setLoading(false);
       return;
     }
+
+    // aggregate subscription revenue
+    const subscriptionRevenue = (paymentData ?? []).reduce((sum: number, row: any) => sum + (Number(row.amount) || 0), 0);
 
     // Aggregate plan distribution
     const planMap: Record<string, number> = {};
@@ -94,6 +101,7 @@ export function AdminDashboardScreen() {
       totalBusinesses: totalBusinesses ?? 0,
       activeUsers: activeUsers ?? 0,
       activeSubscriptions: activeSubs ?? 0,
+      subscriptionRevenue,
       recentBusinesses: (recentBiz ?? []).map(b => ({
         id: b.id,
         name: b.name,
@@ -116,7 +124,7 @@ export function AdminDashboardScreen() {
     { label: 'Total Businesses',    value: stats.totalBusinesses.toLocaleString(),      icon: 'business-outline',  color: COLORS.primary },
     { label: 'Active Users',        value: stats.activeUsers.toLocaleString(),           icon: 'people-outline',    color: COLORS.info },
     { label: 'Active Subscriptions',value: stats.activeSubscriptions.toLocaleString(),   icon: 'pricetag-outline',  color: COLORS.success },
-    { label: 'Plan Revenue',        value: `TZS ${(stats.activeSubscriptions * 25000).toLocaleString()}`, icon: 'cash-outline', color: COLORS.accent },
+    { label: 'Plan Revenue',        value: `TZS ${stats.subscriptionRevenue.toLocaleString()}`, icon: 'cash-outline', color: COLORS.accent },
   ];
 
   return (

@@ -188,15 +188,6 @@ export function LoginScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* Admin portal link — subtle, at the bottom */}
-        <TouchableOpacity
-          style={styles.adminLink}
-          onPress={() => navigation.navigate('AdminLogin')}
-        >
-          <Ionicons name="shield-checkmark-outline" size={14} color="rgba(255,255,255,0.4)" />
-          <Text style={styles.adminLinkText}>Admin Portal</Text>
-        </TouchableOpacity>
-
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -348,17 +339,5 @@ const styles = StyleSheet.create({
   registerAction: {
     color: COLORS.accent,
     fontWeight: '600',
-  },
-  adminLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    marginTop: SPACING.xl,
-    paddingVertical: SPACING.sm,
-  },
-  adminLinkText: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: FONTS.sizes.xs,
   },
 });

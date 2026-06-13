@@ -165,7 +165,6 @@ export type AuthStackParamList = {
   Register: undefined;
   ForgotPassword: undefined;
   OTPVerification: { email: string };
-  AdminLogin: undefined;
 };
 
 export type OnboardingStackParamList = {

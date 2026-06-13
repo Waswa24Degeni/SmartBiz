@@ -10,9 +10,10 @@ import {
   TextInput,
   Alert,
   Switch,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONTS, SPACING, RADIUS } from '../../lib/constants';
+import { COLORS, FONTS, SPACING, RADIUS, BREAKPOINTS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
 import { generateIdempotencyKey } from '../../lib/snippe';
 import { format } from 'date-fns';
@@ -80,6 +81,9 @@ interface PlanDef {
 }
 
 export function AdminPlansScreen() {
+  const { width } = useWindowDimensions();
+  const isMobile = width < BREAKPOINTS.tablet;
+
   const [tab, setTab] = useState<'Plans' | 'History'>('Plans');
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -460,18 +464,18 @@ export function AdminPlansScreen() {
     <View style={styles.screen}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       {/* Summary */}
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryCard}>
+      <View style={[styles.summaryRow, isMobile && styles.summaryRowMobile]}>
+        <View style={[styles.summaryCard, isMobile && styles.summaryCardMobile]}>
           <Ionicons name="people-outline" size={20} color={COLORS.primary} />
           <Text style={styles.summaryValue}>{totalActive}</Text>
           <Text style={styles.summaryLabel}>Active Subscriptions</Text>
         </View>
-        <View style={styles.summaryCard}>
+        <View style={[styles.summaryCard, isMobile && styles.summaryCardMobile]}>
           <Ionicons name="cash-outline" size={20} color={COLORS.success} />
           <Text style={styles.summaryValue}>TZS {totalRevenue.toLocaleString()}</Text>
           <Text style={styles.summaryLabel}>Monthly Revenue</Text>
         </View>
-        <View style={styles.summaryCard}>
+        <View style={[styles.summaryCard, isMobile && styles.summaryCardMobile]}>
           <Ionicons name="pricetag-outline" size={20} color={COLORS.accent} />
           <Text style={styles.summaryValue}>{planOrder.filter(p => (planCounts[p] ?? 0) > 0).length}</Text>
           <Text style={styles.summaryLabel}>Active Plans</Text>
@@ -570,17 +574,47 @@ export function AdminPlansScreen() {
           })}
         </View>
       ) : (
-        <View style={styles.card}>
-          <View style={styles.tableHead}>
-            <Text style={[styles.th, { flex: 1.5 }]}>Business</Text>
-            <Text style={styles.th}>Plan</Text>
-            <Text style={styles.th}>Status</Text>
-            <Text style={styles.th}>Billing</Text>
-            <Text style={styles.th}>Expires</Text>
-            <Text style={[styles.th, { flex: 1.2 }]}>Actions</Text>
-          </View>
+        <View style={[styles.card, isMobile && { backgroundColor: 'transparent', borderWidth: 0, padding: 0 }]}>
+          {!isMobile && (
+            <View style={styles.tableHead}>
+              <Text style={[styles.th, { flex: 1.5 }]}>Business</Text>
+              <Text style={styles.th}>Plan</Text>
+              <Text style={styles.th}>Status</Text>
+              <Text style={styles.th}>Billing</Text>
+              <Text style={styles.th}>Expires</Text>
+              <Text style={[styles.th, { flex: 1.2 }]}>Actions</Text>
+            </View>
+          )}
           {history.length === 0 ? (
             <Text style={styles.emptyText}>No subscriptions yet</Text>
+          ) : isMobile ? (
+            history.map(item => (
+              <View key={item.id} style={styles.mobileHistCard}>
+                <View style={styles.mobileHistTop}>
+                  <Text style={styles.mobileHistBiz}>{item.business_name}</Text>
+                  <View style={[styles.badge, { backgroundColor: item.status === 'active' ? COLORS.successLight : COLORS.border }]}>
+                    <Text style={[styles.badgeText, { color: item.status === 'active' ? COLORS.success : COLORS.textMuted }]}>{item.status}</Text>
+                  </View>
+                </View>
+                <View style={styles.mobileHistDetails}>
+                  <View style={[styles.badge, { backgroundColor: COLORS.primary + '15', alignSelf: 'flex-start' }]}>
+                    <Text style={[styles.badgeText, { color: COLORS.primary }]}>{item.plan}</Text>
+                  </View>
+                  <Text style={styles.tdMuted}>Billing: {item.billing_cycle}</Text>
+                  <Text style={styles.tdMuted}>Expires: {item.expires_at ? format(new Date(item.expires_at), 'dd MMM yyyy') : '—'}</Text>
+                </View>
+                <View style={styles.mobileHistActions}>
+                  <TouchableOpacity style={styles.mobileRowBtn} onPress={() => openEdit(item)}>
+                    <Ionicons name="create-outline" size={14} color={COLORS.info} />
+                    <Text style={[styles.rowBtnText, { color: COLORS.info }]}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.mobileRowBtn} onPress={() => handleDelete(item)}>
+                    <Ionicons name="trash-outline" size={14} color={COLORS.error} />
+                    <Text style={[styles.rowBtnText, { color: COLORS.error }]}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
           ) : history.map(item => (
             <View key={item.id} style={styles.histRow}>
               <Text style={[styles.td, { flex: 1.5 }]} numberOfLines={1}>{item.business_name}</Text>
@@ -868,19 +902,18 @@ const styles = StyleSheet.create({
     zIndex: 20,
     elevation: 20,
   },
-  container: { padding: SPACING.xl, gap: SPACING.base },
-  summaryRow: { flexDirection: 'row', gap: SPACING.base, flexWrap: 'wrap' },
+  container: { padding: SPACING.xl, gap: SPACING.lg },
+  summaryRow: { flexDirection: 'row', gap: SPACING.base },
+  summaryRowMobile: { flexWrap: 'wrap' },
   summaryCard: {
     flex: 1,
-    minWidth: 120,
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
     padding: SPACING.base,
-    alignItems: 'center',
-    gap: SPACING.xs,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  summaryCardMobile: { minWidth: '45%' },
   summaryValue: { fontSize: FONTS.sizes.xl, fontWeight: '700', color: COLORS.text },
   summaryLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, textAlign: 'center' },
   tabRow: { flexDirection: 'row', gap: SPACING.xs },
@@ -955,7 +988,27 @@ const styles = StyleSheet.create({
   card: { backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, padding: SPACING.base, borderWidth: 1, borderColor: COLORS.border },
   tableHead: { flexDirection: 'row', paddingBottom: SPACING.sm, borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: SPACING.xs },
   th: { flex: 1, fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '700', textTransform: 'uppercase' },
-  histRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: SPACING.sm, borderBottomWidth: 1, borderBottomColor: COLORS.surfaceAlt },
+  histRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.surfaceAlt,
+  },
+  mobileHistCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.base,
+    marginBottom: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  mobileHistTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  mobileHistBiz: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.text, flex: 1 },
+  mobileHistDetails: { gap: 4, paddingVertical: SPACING.xs },
+  mobileHistActions: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.xs },
+  mobileRowBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 8, backgroundColor: COLORS.infoLight, borderRadius: RADIUS.md },
   td: { flex: 1, fontSize: FONTS.sizes.sm, color: COLORS.text },
   tdMuted: { flex: 1, fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.full, alignSelf: 'flex-start' },

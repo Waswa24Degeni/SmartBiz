@@ -9,9 +9,10 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONTS, SPACING, RADIUS } from '../../lib/constants';
+import { COLORS, FONTS, SPACING, RADIUS, BREAKPOINTS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useRealtimeSubscription } from '../../lib/hooks';
@@ -59,6 +60,8 @@ interface ThreadMessageRow {
 }
 
 export function AdminSupportScreen() {
+  const { width } = useWindowDimensions();
+  const isMobile = width < BREAKPOINTS.tablet;
   const { user } = useAuth();
   const [tickets, setTickets] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -229,13 +232,13 @@ export function AdminSupportScreen() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.summaryRow}>
+      <View style={[styles.summaryRow, isMobile && styles.summaryRowMobile]}>
         {[
           { label: 'Open', count: open, color: COLORS.error, bg: COLORS.errorLight, icon: 'alert-circle-outline' },
           { label: 'In Progress', count: inProgress, color: COLORS.warning, bg: COLORS.warningLight, icon: 'time-outline' },
           { label: 'Resolved', count: resolved, color: COLORS.success, bg: COLORS.successLight, icon: 'checkmark-circle-outline' },
         ].map((s) => (
-          <View key={s.label} style={styles.summaryCard}>
+          <View key={s.label} style={[styles.summaryCard, isMobile && styles.summaryCardMobile]}>
             <View style={[styles.sumIcon, { backgroundColor: s.bg }]}>
               <Ionicons name={s.icon as any} size={18} color={s.color} />
             </View>
@@ -285,18 +288,60 @@ export function AdminSupportScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-          <View style={styles.tableHead}>
-            <Text style={[styles.th, { flex: 0.8 }]}>Ticket</Text>
-            <Text style={[styles.th, { flex: 2.5 }]}>Subject</Text>
-            <Text style={[styles.th, { flex: 1.5 }]}>Business</Text>
-            <Text style={styles.th}>Priority</Text>
-            <Text style={styles.th}>Status</Text>
-            <Text style={styles.th}>Date</Text>
-            <Text style={[styles.th, { flex: 0.8 }]}>Action</Text>
-          </View>
+          {!isMobile && (
+            <View style={styles.tableHead}>
+              <Text style={[styles.th, { flex: 0.8 }]}>Ticket</Text>
+              <Text style={[styles.th, { flex: 2.5 }]}>Subject</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Business</Text>
+              <Text style={styles.th}>Priority</Text>
+              <Text style={styles.th}>Status</Text>
+              <Text style={styles.th}>Date</Text>
+              <Text style={[styles.th, { flex: 0.8 }]}>Action</Text>
+            </View>
+          )}
 
           {filtered.length === 0 ? (
             <Text style={styles.emptyText}>No tickets found</Text>
+          ) : isMobile ? (
+            filtered.map((ticket) => (
+              <View key={ticket.id} style={styles.mobileCard}>
+                <View style={styles.mobileCardTop}>
+                  <Text style={[styles.td, { color: COLORS.info, fontWeight: '700', fontSize: FONTS.sizes.xs }]}>
+                    #{ticket.id.slice(-6).toUpperCase()}
+                  </Text>
+                  <Text style={styles.tdMuted}>{format(new Date(ticket.created_at), 'dd MMM yyyy')}</Text>
+                </View>
+                
+                <Text style={styles.subject} numberOfLines={2}>{ticket.subject}</Text>
+                <Text style={styles.userText}>{ticket.user_name} · {ticket.business_name}</Text>
+                
+                <View style={styles.mobileCardBadges}>
+                  <View style={[styles.badge, { backgroundColor: PRIORITY_CONFIG[ticket.priority]?.bg ?? COLORS.border }]}>
+                    <Ionicons
+                      name={PRIORITY_CONFIG[ticket.priority]?.icon as any}
+                      size={11}
+                      color={PRIORITY_CONFIG[ticket.priority]?.text ?? COLORS.text}
+                    />
+                    <Text style={[styles.badgeText, { color: PRIORITY_CONFIG[ticket.priority]?.text ?? COLORS.text }]}>
+                      {ticket.priority}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleStatusChange(ticket)}
+                    style={[styles.badge, { backgroundColor: STATUS_CONFIG[ticket.status]?.bg ?? COLORS.border }]}
+                  >
+                    <Text style={[styles.badgeText, { color: STATUS_CONFIG[ticket.status]?.text ?? COLORS.text }]}>
+                      {STATUS_CONFIG[ticket.status]?.label ?? ticket.status}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <TouchableOpacity style={styles.mobileReplyBtn} onPress={() => handleOpenReply(ticket)}>
+                  <Ionicons name="chatbubble-outline" size={14} color={COLORS.primary} />
+                  <Text style={styles.replyText}>Reply to Ticket</Text>
+                </TouchableOpacity>
+              </View>
+            ))
           ) : (
             filtered.map((ticket) => (
               <View key={ticket.id} style={styles.row}>
@@ -438,6 +483,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
     flexWrap: 'wrap',
   },
+  summaryRowMobile: { flexWrap: 'wrap' },
   summaryCard: {
     flex: 1,
     minWidth: 90,
@@ -450,6 +496,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     backgroundColor: COLORS.surfaceAlt,
   },
+  summaryCardMobile: { minWidth: '45%' },
   sumIcon: { width: 34, height: 34, borderRadius: RADIUS.sm, alignItems: 'center', justifyContent: 'center' },
   sumCount: { fontSize: FONTS.sizes.lg, fontWeight: '700' },
   sumLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
@@ -538,6 +585,28 @@ const styles = StyleSheet.create({
   },
   replyText: { fontSize: FONTS.sizes.xs, color: COLORS.primary, fontWeight: '600' },
   emptyText: { textAlign: 'center', color: COLORS.textMuted, fontSize: FONTS.sizes.sm, padding: SPACING.xl },
+  mobileCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.base,
+    marginBottom: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  mobileCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  mobileCardBadges: { flexDirection: 'row', gap: SPACING.sm, flexWrap: 'wrap', marginVertical: SPACING.xs },
+  mobileReplyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    paddingVertical: 8,
+    backgroundColor: COLORS.primary + '15',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '30',
+  },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modal: {
     backgroundColor: COLORS.surface,

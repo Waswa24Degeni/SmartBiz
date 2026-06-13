@@ -212,6 +212,7 @@ const styles = StyleSheet.create({
   sidebar: {
     backgroundColor: '#0F2318',
     paddingTop: 20,
+    height: '100%',
   },
   sidebarExpanded: { width: 210 },
   sidebarCollapsed: { width: 78 },

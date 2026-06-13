@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Modal, Alert, ActivityIndicator,
+  TextInput, Modal, Alert, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONTS, SPACING, RADIUS } from '../../lib/constants';
+import { COLORS, FONTS, SPACING, RADIUS, BREAKPOINTS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
 import { format } from 'date-fns';
 import { useRealtimeSubscription } from '../../lib/hooks';
@@ -37,6 +37,8 @@ export function AdminUsersScreen() {
   const [editTarget, setEditTarget] = useState<UserRow | null>(null);
   const [editRole, setEditRole] = useState<UserRole>('owner');
   const [saving, setSaving] = useState(false);
+  const { width } = useWindowDimensions();
+  const isMobile = width < BREAKPOINTS.tablet;
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -164,44 +166,65 @@ export function AdminUsersScreen() {
         </View>
       ) : (
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-          <View style={styles.tableHead}>
-            <Text style={[styles.th, { flex: 1.8 }]}>User</Text>
-            <Text style={styles.th}>Role</Text>
-            <Text style={[styles.th, { flex: 1.5 }]}>Business</Text>
-            <Text style={styles.th}>Joined</Text>
-            <Text style={[styles.th, { flex: 0.7 }]}>Actions</Text>
-          </View>
+          {!isMobile && (
+            <View style={styles.tableHead}>
+              <Text style={[styles.th, { flex: 1.8 }]}>User</Text>
+              <Text style={styles.th}>Role</Text>
+              <Text style={[styles.th, { flex: 1.5 }]}>Business</Text>
+              <Text style={styles.th}>Joined</Text>
+              <Text style={[styles.th, { flex: 0.7 }]}>Actions</Text>
+            </View>
+          )}
 
           {filtered.length === 0 ? (
             <Text style={styles.emptyText}>No users found</Text>
           ) : filtered.map(user => (
-            <View key={user.id} style={styles.row}>
-              <View style={[styles.cell, { flex: 1.8, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm }]}>
-                <View style={[styles.avatar, { backgroundColor: COLORS.primary }]}>
-                  <Text style={styles.avatarText}>{(user.full_name || '?').charAt(0).toUpperCase()}</Text>
+            <View key={user.id} style={[styles.row, isMobile && styles.rowMobile]}>
+              <View style={[styles.cell, isMobile ? styles.cellMobileTop : { flex: 1.8, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, flex: 1 }}>
+                  <View style={[styles.avatar, { backgroundColor: COLORS.primary }]}>
+                    <Text style={styles.avatarText}>{(user.full_name || '?').charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.userName} numberOfLines={1}>{user.full_name}</Text>
+                    <Text style={styles.userEmail} numberOfLines={1}>{user.email}</Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.userName} numberOfLines={1}>{user.full_name}</Text>
-                  <Text style={styles.userEmail} numberOfLines={1}>{user.email}</Text>
+                {isMobile && (
+                  <View style={[styles.badge, { backgroundColor: ROLE_BADGES[user.role]?.bg ?? COLORS.border }]}>
+                    <Text style={[styles.badgeText, { color: ROLE_BADGES[user.role]?.text ?? COLORS.text }]}>{user.role}</Text>
+                  </View>
+                )}
+              </View>
+
+              {isMobile ? (
+                <View style={styles.mobileDetails}>
+                  <Text style={styles.cellText} numberOfLines={1}>🏢 {user.business_name}</Text>
+                  <Text style={styles.cellMuted}>📅 Joined: {format(new Date(user.created_at), 'dd MMM yyyy')}</Text>
                 </View>
-              </View>
-              <View style={styles.cell}>
-                <View style={[styles.badge, { backgroundColor: ROLE_BADGES[user.role]?.bg ?? COLORS.border }]}>
-                  <Text style={[styles.badgeText, { color: ROLE_BADGES[user.role]?.text ?? COLORS.text }]}>{user.role}</Text>
-                </View>
-              </View>
-              <View style={[styles.cell, { flex: 1.5 }]}>
-                <Text style={styles.cellText} numberOfLines={1}>{user.business_name}</Text>
-              </View>
-              <View style={styles.cell}>
-                <Text style={styles.cellMuted}>{format(new Date(user.created_at), 'dd MMM yyyy')}</Text>
-              </View>
-              <View style={[styles.cell, { flex: 0.7, flexDirection: 'row', gap: 5 }]}>
-                <TouchableOpacity style={styles.actionBtn} onPress={() => handleEditOpen(user)}>
+              ) : (
+                <>
+                  <View style={styles.cell}>
+                    <View style={[styles.badge, { backgroundColor: ROLE_BADGES[user.role]?.bg ?? COLORS.border }]}>
+                      <Text style={[styles.badgeText, { color: ROLE_BADGES[user.role]?.text ?? COLORS.text }]}>{user.role}</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.cell, { flex: 1.5 }]}>
+                    <Text style={styles.cellText} numberOfLines={1}>{user.business_name}</Text>
+                  </View>
+                  <View style={styles.cell}>
+                    <Text style={styles.cellMuted}>{format(new Date(user.created_at), 'dd MMM yyyy')}</Text>
+                  </View>
+                </>
+              )}
+
+              <View style={[styles.cell, isMobile ? styles.actionsMobile : { flex: 0.7, flexDirection: 'row', gap: 5 }]}>
+                <TouchableOpacity style={[styles.actionBtn, isMobile && styles.actionBtnMobile]} onPress={() => handleEditOpen(user)}>
                   <Ionicons name="create-outline" size={15} color={COLORS.info} />
+                  {isMobile && <Text style={styles.actionBtnText}>Edit</Text>}
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: user.role === 'banned' ? COLORS.successLight : COLORS.errorLight }]}
+                  style={[styles.actionBtn, isMobile && styles.actionBtnMobile, { backgroundColor: user.role === 'banned' ? COLORS.successLight : COLORS.errorLight }]}
                   onPress={() => handleToggleBan(user)}
                 >
                   <Ionicons
@@ -209,6 +232,7 @@ export function AdminUsersScreen() {
                     size={15}
                     color={user.role === 'banned' ? COLORS.success : COLORS.error}
                   />
+                  {isMobile && <Text style={[styles.actionBtnText, { color: user.role === 'banned' ? COLORS.success : COLORS.error }]}>{user.role === 'banned' ? 'Activate' : 'Ban'}</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -334,6 +358,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  rowMobile: { flexDirection: 'column', alignItems: 'stretch', gap: SPACING.sm, padding: SPACING.base },
+  cellMobileTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  mobileDetails: { paddingVertical: SPACING.xs, gap: 4 },
+  actionsMobile: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.xs },
+  actionBtnMobile: { flex: 1, flexDirection: 'row', paddingVertical: 8, borderRadius: RADIUS.md, gap: SPACING.xs },
+  actionBtnText: { fontSize: FONTS.sizes.xs, color: COLORS.info, fontWeight: '600' },
   cell: { flex: 1 },
   avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: COLORS.white, fontSize: FONTS.sizes.sm, fontWeight: '700' },

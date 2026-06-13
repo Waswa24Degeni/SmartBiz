@@ -16,7 +16,6 @@ import { COLORS, FONTS, SPACING, RADIUS } from '../lib/constants';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
-import { AdminLoginScreen } from '../screens/auth/AdminLoginScreen';
 import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { MainLayout } from '../screens/MainLayout';
 import { AdminLayout } from '../screens/admin/AdminLayout';
@@ -126,7 +125,6 @@ function RootNavigator() {
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-        <Stack.Screen name="AdminLogin" component={AdminLoginScreen} />
       </Stack.Navigator>
     );
   }

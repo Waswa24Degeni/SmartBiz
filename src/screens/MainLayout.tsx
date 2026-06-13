@@ -363,6 +363,7 @@ const styles = StyleSheet.create({
   sidebar: {
     borderRightWidth: 1,
     borderRightColor: COLORS.border,
+    height: '100%',
   },
   sidebarExpanded: { width: 220 },
   sidebarCollapsed: { width: 80 },

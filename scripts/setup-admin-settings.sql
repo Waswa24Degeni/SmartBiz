@@ -29,10 +29,12 @@ on conflict (key) do nothing;
 -- RLS: only service_role or admin users can write; authenticated users can read
 alter table system_config enable row level security;
 
+drop policy if exists "admin_read_system_config" on system_config;
 create policy "admin_read_system_config"
   on system_config for select
   using (true);
 
+drop policy if exists "admin_write_system_config" on system_config;
 create policy "admin_write_system_config"
   on system_config for all
   using (
@@ -82,10 +84,12 @@ on conflict (id) do nothing;
 -- RLS
 alter table subscription_plans enable row level security;
 
+drop policy if exists "anyone_read_plans" on subscription_plans;
 create policy "anyone_read_plans"
   on subscription_plans for select
   using (true);
 
+drop policy if exists "admin_write_plans" on subscription_plans;
 create policy "admin_write_plans"
   on subscription_plans for all
   using (

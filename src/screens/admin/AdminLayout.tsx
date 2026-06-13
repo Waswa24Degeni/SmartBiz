@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, ScrollView, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { AdminSupportScreen } from './AdminSupportScreen';
 import { AdminPaymentScreen } from './AdminPaymentScreen';
 import { AdminSettingsScreen } from './AdminSettingsScreen';
 import { AdminRevenueScreen } from './AdminRevenueScreen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type AdminRoute = 'Overview' | 'Users' | 'Businesses' | 'Revenue' | 'Plans' | 'Support' | 'Payments' | 'Settings';
 
@@ -112,6 +113,7 @@ function AdminSidebarContent({
 
 export function AdminLayout() {
   const [route, setRoute] = useState<AdminRoute>('Overview');
+  const [isRouteLoaded, setIsRouteLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { user, signOut } = useAuth();
@@ -120,7 +122,22 @@ export function AdminLayout() {
   const isMobile = width < BREAKPOINTS.tablet;
   const drawerWidth = Math.min(Math.max(width * 0.82, 248), 320);
 
+  useEffect(() => {
+    AsyncStorage.getItem('smartbiz_admin_last_route').then((savedRoute) => {
+      if (savedRoute && NAV_ITEMS.some(item => item.route === savedRoute)) {
+        setRoute(savedRoute as AdminRoute);
+      }
+      setIsRouteLoaded(true);
+    });
+  }, []);
+
+  const handleSetRoute = (newRoute: AdminRoute) => {
+    setRoute(newRoute);
+    AsyncStorage.setItem('smartbiz_admin_last_route', newRoute);
+  };
+
   const renderContent = () => {
+    if (!isRouteLoaded) return null;
     switch (route) {
       case 'Overview':
         return <AdminDashboardScreen />;
@@ -148,7 +165,7 @@ export function AdminLayout() {
       {!isMobile && (
         <AdminSidebarContent
           route={route}
-          setRoute={setRoute}
+          setRoute={handleSetRoute}
           user={user}
           signOut={signOut}
           collapsed={sidebarCollapsed}
@@ -162,7 +179,7 @@ export function AdminLayout() {
           <View style={[styles.drawer, { width: drawerWidth }]}>
             <AdminSidebarContent
               route={route}
-              setRoute={setRoute}
+              setRoute={handleSetRoute}
               user={user}
               signOut={signOut}
               collapsed={false}

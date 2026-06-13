@@ -545,8 +545,8 @@ export function AdminPlansScreen() {
                 <Text style={styles.planPeriod}>{def.period}</Text>
                 <View style={styles.planDivider} />
                 <View style={styles.bizCount}>
-                  <Ionicons name="business-outline" size={14} color={COLORS.textMuted} />
-                  <Text style={styles.bizCountText}>{count} {count === 1 ? 'business' : 'businesses'}</Text>
+                  <Ionicons name="people-outline" size={14} color={COLORS.textMuted} />
+                  <Text style={styles.bizCountText}>{count} {count === 1 ? 'Subscriber' : 'Subscribers'}</Text>
                 </View>
                 <View style={styles.featuresList}>
                   {def.features.map((f, i) => (

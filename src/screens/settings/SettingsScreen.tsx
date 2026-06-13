@@ -1280,9 +1280,9 @@ function LanguageRegionSection() {
 // ============================================================
 
 const SUB_PLANS = [
-  { id: 'starter',  name: 'Starter',  price: 15000,  features: ['2 Shops', '3 users', '500 products', 'Advanced reports', 'Email support'] },
-  { id: 'business', name: 'Business', price: 35000,  features: ['2 Shops', '10 users', 'Unlimited products', 'Full analytics', 'Priority support', 'Staff management'] },
-  { id: 'premium',  name: 'Premium',  price: 80000,  features: ['2 Shops', 'Unlimited users', 'Unlimited products', 'Custom reports', '24/7 support', 'API access'] },
+  { id: 'starter',  name: 'Starter',  price: 15000,  features: ['2 Businesses', '3 users', '500 products', 'Advanced reports', 'Email support'] },
+  { id: 'business', name: 'Business', price: 35000,  features: ['2 Businesses', '10 users', 'Unlimited products', 'Full analytics', 'Priority support', 'Staff management'] },
+  { id: 'premium',  name: 'Premium',  price: 80000,  features: ['2 Businesses', 'Unlimited users', 'Unlimited products', 'Custom reports', '24/7 support', 'API access'] },
 ] as const;
 
 const MOBILE_MONEY_MIN_AMOUNT = 500;

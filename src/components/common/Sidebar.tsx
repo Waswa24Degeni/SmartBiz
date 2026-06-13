@@ -69,7 +69,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
 
   const handleAddShop = async () => {
     if (!newShopName.trim()) {
-      Alert.alert('Error', 'Please enter a shop name');
+      Alert.alert('Error', 'Please enter a business name');
       return;
     }
     
@@ -88,7 +88,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
       const limit = hasPaidPlan ? 2 : 1;
       
       if (businesses.length >= limit) {
-        Alert.alert('Limit Reached', `Your plan is limited to ${limit} shop(s). Upgrade to add more.`);
+        Alert.alert('Limit Reached', `Your plan is limited to ${limit} business(es). Upgrade to add more.`);
         setIsAddingShop(false);
         return;
       }
@@ -105,7 +105,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
       setShowShopModal(false);
       setNewShopName('');
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to add shop');
+      Alert.alert('Error', err?.message || 'Failed to add business');
     } finally {
       setIsAddingShop(false);
     }
@@ -239,7 +239,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Your Shops</Text>
+              <Text style={styles.modalTitle}>Your Businesses</Text>
               <Pressable onPress={() => setShowShopModal(false)}>
                 <Ionicons name="close" size={24} color={COLORS.text} />
               </Pressable>
@@ -262,10 +262,10 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
             </ScrollView>
 
             <View style={styles.addShopContainer}>
-              <Text style={styles.modalSubtitle}>Add Another Shop</Text>
+              <Text style={styles.modalSubtitle}>Add Another Business</Text>
               <TextInput
                 style={styles.shopInput}
-                placeholder="New Shop Name"
+                placeholder="New Business Name"
                 value={newShopName}
                 onChangeText={setNewShopName}
               />
@@ -279,7 +279,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
                 ) : (
                   <>
                     <Ionicons name="add-circle-outline" size={20} color={COLORS.white} />
-                    <Text style={styles.addShopBtnText}>Add Shop</Text>
+                    <Text style={styles.addShopBtnText}>Add Business</Text>
                   </>
                 )}
               </Pressable>

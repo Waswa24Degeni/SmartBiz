@@ -19,10 +19,48 @@
   // Inlined from _shared/snippe.ts  (required for single-file deploy)
   // ─────────────────────────────────────────────────────────────
 
+  const SNIPPE_BASE = 'https://api.snippe.sh/v1';
+
   function getEnv(name: string): string {
     const val = Deno.env.get(name);
     if (!val) throw new Error(`Missing environment variable: ${name}`);
     return val;
+  }
+
+  async function snippeFetch<T>(
+    apiKey: string, method: 'GET' | 'POST', path: string,
+    body?: unknown, idempotencyKey?: string,
+  ): Promise<T> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: 'application/json',
+    };
+    if (method === 'POST') {
+      headers['Content-Type'] = 'application/json';
+      if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+    }
+    const controller = new AbortController();
+    const timeoutMs = 20000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    const res = await fetch(`${SNIPPE_BASE}${path}`, {
+      method,
+      headers,
+      signal: controller.signal,
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    }).finally(() => clearTimeout(timeout));
+
+    if (!res.ok) {
+      const raw = await res.text().catch(() => '');
+      throw new Error(`Snippe HTTP ${res.status}${raw ? `: ${raw}` : ''}`);
+    }
+
+    return res.json() as Promise<T>;
+  }
+
+  async function snippePayout(req: any, options?: { apiKey?: string; idempotencyKey?: string }): Promise<any> {
+    const apiKey = options?.apiKey ?? getEnv('SNIPPE_API_KEY');
+    return snippeFetch<any>(apiKey, 'POST', '/payouts/send', req, options?.idempotencyKey);
   }
 
   async function verifyWebhookSignature(
@@ -123,7 +161,7 @@
       // 4. Look up the payment record by gateway_reference
       const { data: payment, error: fetchErr } = await supabase
         .from('payments')
-        .select('id, status, payment_type, business_id, subscription_id, pos_order_id')
+        .select('id, status, payment_type, business_id, subscription_id, pos_order_id, amount')
         .eq('gateway_reference', payload.reference)
         .maybeSingle();
 
@@ -178,6 +216,7 @@
         console.log(`[Webhook] Payment completed (${payment.id}) — triggering side effects`);
         const sideEffects = await Promise.allSettled([
           handleSubscriptionActivation(supabase, payment),
+          triggerAdminPayout(supabase, payment),
           handlePosOrderCompletion(supabase, payment),
         ]);
 
@@ -238,6 +277,57 @@
 
     if (error) {
       console.error('subscription activation error:', error);
+    }
+  }
+
+  async function triggerAdminPayout(
+    supabase: any,
+    payment: { id: string; amount: number; payment_type: string },
+  ): Promise<void> {
+    if (payment.payment_type !== 'subscription') return;
+
+    const { data: gatewayCfg } = await supabase
+      .from('payment_gateway_config')
+      .select('*')
+      .maybeSingle();
+
+    if (!gatewayCfg) return;
+
+    const method = gatewayCfg.receive_method;
+    if (!method) return;
+
+    const PAYOUT_FEE = 1500;
+    const netAmount = payment.amount - PAYOUT_FEE;
+    if (netAmount <= 0) return;
+
+    const payoutBody: any = {
+      amount: netAmount,
+      channel: method,
+      narration: `Subscription payout for payment ${payment.id}`,
+      metadata: { original_payment_id: payment.id },
+    };
+
+    if (method === 'bank') {
+      if (!gatewayCfg.receive_bank_code || !gatewayCfg.receive_bank_account) return;
+      payoutBody.recipient_bank = gatewayCfg.receive_bank_code;
+      payoutBody.recipient_account = gatewayCfg.receive_bank_account;
+      payoutBody.recipient_name = gatewayCfg.receive_bank_account_name || 'Admin';
+    } else {
+      if (!gatewayCfg.receive_phone) return;
+      const d = gatewayCfg.receive_phone.replace(/\D/g, '');
+      const phone = (d.startsWith('0') && d.length === 10) ? `255${d.slice(1)}` : (d.length === 9 ? `255${d}` : d);
+      payoutBody.recipient_phone = phone;
+      payoutBody.recipient_name = gatewayCfg.receive_name || 'Admin';
+    }
+
+    try {
+      console.log(`[Webhook.Payout] Triggering admin payout of ${netAmount} via ${method}`);
+      const idempotencyKey = `payout_sub_${payment.id}`;
+      await snippePayout(payoutBody, { idempotencyKey });
+      console.log(`[Webhook.Payout] ✓ Admin payout initiated`);
+    } catch (err) {
+      console.error('[Webhook.Payout] Failed to trigger admin payout:', err);
+      throw err;
     }
   }
 

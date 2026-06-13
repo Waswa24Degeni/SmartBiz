@@ -297,7 +297,12 @@ export function AdminPlansScreen() {
 
     const now = new Date();
     const expiresAt = new Date(now.getTime());
-    expiresAt.setMonth(expiresAt.getMonth() + 1);
+    const planPeriod = planDefs[createPlan]?.period?.toLowerCase() || '';
+    if (planPeriod.includes('year')) {
+      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    } else {
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+    }
 
     setCreateSaving(true);
 

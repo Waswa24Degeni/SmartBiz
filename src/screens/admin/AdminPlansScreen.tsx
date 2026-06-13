@@ -26,7 +26,7 @@ const PLAN_META: Record<string, { price: string; period: string; color: string; 
   },
   starter: {
     price: 'TZS 15,000', period: '/month', color: COLORS.info, bgColor: COLORS.infoLight,
-    features: ['2 Businesses', '3 users', '500 products', 'Advanced reports', 'Email support'],
+    features: ['1 Business', '3 users', '500 products', 'Advanced reports', 'Email support'],
   },
   business: {
     price: 'TZS 35,000', period: '/month', color: COLORS.success, bgColor: COLORS.successLight, popular: true,

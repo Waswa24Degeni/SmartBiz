@@ -1280,7 +1280,7 @@ function LanguageRegionSection() {
 // ============================================================
 
 const SUB_PLANS = [
-  { id: 'starter',  name: 'Starter',  price: 15000,  features: ['2 Businesses', '3 users', '500 products', 'Advanced reports', 'Email support'] },
+  { id: 'starter',  name: 'Starter',  price: 15000,  features: ['1 Business', '3 users', '500 products', 'Advanced reports', 'Email support'] },
   { id: 'business', name: 'Business', price: 35000,  features: ['2 Businesses', '10 users', 'Unlimited products', 'Full analytics', 'Priority support', 'Staff management'] },
   { id: 'premium',  name: 'Premium',  price: 80000,  features: ['2 Businesses', 'Unlimited users', 'Unlimited products', 'Custom reports', '24/7 support', 'API access'] },
 ] as const;

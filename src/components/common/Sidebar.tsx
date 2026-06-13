@@ -80,12 +80,12 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
         .select('plan, status')
         .in('business_id', businesses.map(b => b.id));
       
-      let hasPaidPlan = false;
+      let hasMultiBusinessPlan = false;
       if (subs) {
-        hasPaidPlan = subs.some(s => s.status === 'active' && s.plan !== 'free');
+        hasMultiBusinessPlan = subs.some(s => s.status === 'active' && (s.plan === 'business' || s.plan === 'premium'));
       }
       
-      const limit = hasPaidPlan ? 2 : 1;
+      const limit = hasMultiBusinessPlan ? 2 : 1;
       
       if (businesses.length >= limit) {
         Alert.alert('Limit Reached', `Your plan is limited to ${limit} business(es). Upgrade to add more.`);

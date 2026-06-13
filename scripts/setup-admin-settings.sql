@@ -71,7 +71,7 @@ values
    '["1 Business","1 user","100 products","Basic reports","Mobile app"]'::jsonb,
    false, 0),
   ('starter',  'Starter',  15000, '/month',  '#3B82F6', '#EFF6FF',
-   '["2 Businesses","3 users","500 products","Advanced reports","Email support"]'::jsonb,
+   '["1 Business","3 users","500 products","Advanced reports","Email support"]'::jsonb,
    false, 1),
   ('business', 'Business', 35000, '/month',  '#10B981', '#ECFDF5',
    '["2 Businesses","10 users","Unlimited products","Full analytics","Priority support","Staff management"]'::jsonb,

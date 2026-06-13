@@ -14,6 +14,7 @@ import {
   Platform,
   useWindowDimensions,
   Image,
+  FlatList,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -652,19 +653,6 @@ export function POSScreen() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.topBar}>
-        <View style={{ flex: 1 }} />
-        <Pressable style={styles.cartChip} onPress={() => isMobile && setMobilePane('cart')}>
-          <LinearGradient
-            colors={['#14B8A6', '#0D9488']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.cartChipGradient}
-          />
-          <Ionicons name="cart-outline" size={14} color={COLORS.white} />
-          <Text style={styles.cartChipText}>{itemCount} items</Text>
-        </Pressable>
-      </View>
 
       {isMobile && (
         <View style={styles.mobileSwitchRow}>
@@ -704,162 +692,175 @@ export function POSScreen() {
             style={[styles.productsPane, isMobile && { width: '100%', borderRightWidth: 0 }]}
             onLayout={(e) => setProductsPaneWidth(e.nativeEvent.layout.width)}
           >
-          <View style={styles.searchRow}>
-            <Ionicons name="search-outline" size={15} color={COLORS.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search products..."
-              placeholderTextColor={COLORS.textMuted}
-              value={search}
-              onChangeText={setSearch}
-            />
-          </View>
+            <FlatList
+              key={numCols}
+              data={filteredProducts}
+              numColumns={numCols}
+              keyExtractor={(p) => p.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.productsList}
+              ListHeaderComponent={
+                <View>
+                  <View style={styles.searchRow}>
+                    <Ionicons name="search-outline" size={15} color={COLORS.textMuted} />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Search products..."
+                      placeholderTextColor={COLORS.textMuted}
+                      value={search}
+                      onChangeText={setSearch}
+                    />
+                  </View>
 
-          {isMobile ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryChips}>
-              {categories.map((c) => (
-                <Pressable
-                  key={c}
-                  style={[styles.categoryChip, categoryFilter === c && styles.categoryChipActive]}
-                  onPress={() => setCategoryFilter(c)}
-                >
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.categoryChipText, categoryFilter === c && styles.categoryChipTextActive]}>
-                    {c}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          ) : (
-            <View style={styles.categoryChipsWrap}>
-              {categories.map((c) => (
-                <Pressable
-                  key={c}
-                  style={[styles.categoryChip, categoryFilter === c && styles.categoryChipActive]}
-                  onPress={() => setCategoryFilter(c)}
-                >
-                  <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.categoryChipText, categoryFilter === c && styles.categoryChipTextActive]}>
-                    {c}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          <View style={styles.productViewSwitchRow}>
-            <Pressable
-              style={[styles.productViewSwitchBtn, productView === 'cards' && styles.productViewSwitchBtnActive]}
-              onPress={() => setProductView('cards')}
-            >
-              <Ionicons name="grid-outline" size={14} color={productView === 'cards' ? COLORS.white : COLORS.textSecondary} />
-              <Text style={[styles.productViewSwitchText, productView === 'cards' && styles.productViewSwitchTextActive]}>Cards</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.productViewSwitchBtn, productView === 'compact' && styles.productViewSwitchBtnActive]}
-              onPress={() => setProductView('compact')}
-            >
-              <Ionicons name="list-outline" size={14} color={productView === 'compact' ? COLORS.white : COLORS.textSecondary} />
-              <Text style={[styles.productViewSwitchText, productView === 'compact' && styles.productViewSwitchTextActive]}>Compact</Text>
-            </Pressable>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[
-            styles.productsList,
-            !isMobile && { flexDirection: 'row', flexWrap: 'wrap' },
-          ]}>
-            {filteredProducts.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="cube-outline" size={40} color={COLORS.textMuted} />
-                <Text style={styles.emptyText}>No matching products</Text>
-              </View>
-            ) : (
-              filteredProducts.map((p) => {
-                  const initial = p.name.charAt(0).toUpperCase();
-                  const colorPalette = ['#0D9488', '#F59E0B', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
-                  const dotColor = colorPalette[p.name.charCodeAt(0) % colorPalette.length];
-                  const lowStock = p.stock_quantity <= Math.max(1, p.low_stock_threshold ?? 0);
-
-                  if (productView === 'compact') {
-                    return (
-                      <Pressable
-                        key={p.id}
-                        style={({ pressed }) => [
-                          styles.compactProductRow,
-                          pressed && styles.productCardPressed,
-                        ]}
-                        onPress={() => addItem(p)}
-                      >
-                        <View style={[styles.compactProductDot, { backgroundColor: dotColor + '18', borderColor: dotColor + '35' }]}>
-                          <Text style={[styles.compactProductDotText, { color: dotColor }]}>{initial}</Text>
-                        </View>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={styles.compactProductName} numberOfLines={1}>{p.name}</Text>
-                          <Text style={styles.compactProductMeta} numberOfLines={1}>{p.category?.name ?? 'General'}</Text>
-                        </View>
-                        <View style={styles.compactProductRight}>
-                          <Text style={styles.compactProductPrice}>{currency} {Number(p.selling_price).toLocaleString()}</Text>
-                          <Text style={[styles.compactProductStock, lowStock && styles.compactProductStockLow]}>
-                            {p.stock_quantity} {p.unit}
+                  {isMobile ? (
+                    <ScrollView 
+                      horizontal 
+                      showsHorizontalScrollIndicator={false} 
+                      style={{ flexGrow: 0 }}
+                      contentContainerStyle={styles.categoryChips}
+                    >
+                      {categories.map((c) => (
+                        <Pressable
+                          key={c}
+                          style={[
+                            styles.categoryChip, 
+                            categoryFilter === c && styles.categoryChipActive,
+                            { marginRight: SPACING.sm }
+                          ]}
+                          onPress={() => setCategoryFilter(c)}
+                        >
+                          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.categoryChipText, categoryFilter === c && styles.categoryChipTextActive]}>
+                            {c}
                           </Text>
-                        </View>
-                      </Pressable>
-                    );
-                  }
+                        </Pressable>
+                      ))}
+                      <View style={{ width: SPACING.xs }} />
+                    </ScrollView>
+                  ) : (
+                    <View style={styles.categoryChipsWrap}>
+                      {categories.map((c) => (
+                        <Pressable
+                          key={c}
+                          style={[styles.categoryChip, categoryFilter === c && styles.categoryChipActive]}
+                          onPress={() => setCategoryFilter(c)}
+                        >
+                          <Text numberOfLines={1} ellipsizeMode="tail" style={[styles.categoryChipText, categoryFilter === c && styles.categoryChipTextActive]}>
+                            {c}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
 
+                  <View style={styles.productViewSwitchRow}>
+                    <Pressable
+                      style={[styles.productViewSwitchBtn, productView === 'cards' && styles.productViewSwitchBtnActive]}
+                      onPress={() => setProductView('cards')}
+                    >
+                      <Ionicons name="grid-outline" size={14} color={productView === 'cards' ? COLORS.white : COLORS.textSecondary} />
+                      <Text style={[styles.productViewSwitchText, productView === 'cards' && styles.productViewSwitchTextActive]}>Cards</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.productViewSwitchBtn, productView === 'compact' && styles.productViewSwitchBtnActive]}
+                      onPress={() => setProductView('compact')}
+                    >
+                      <Ionicons name="list-outline" size={14} color={productView === 'compact' ? COLORS.white : COLORS.textSecondary} />
+                      <Text style={[styles.productViewSwitchText, productView === 'compact' && styles.productViewSwitchTextActive]}>Compact</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              }
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Ionicons name="cube-outline" size={40} color={COLORS.textMuted} />
+                  <Text style={styles.emptyText}>No matching products</Text>
+                </View>
+              }
+              renderItem={({ item: p }) => {
+                const initial = p.name.charAt(0).toUpperCase();
+                const colorPalette = ['#0D9488', '#F59E0B', '#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
+                const dotColor = colorPalette[p.name.charCodeAt(0) % colorPalette.length];
+                const lowStock = p.stock_quantity <= Math.max(1, p.low_stock_threshold ?? 0);
+
+                if (productView === 'compact') {
                   return (
                     <Pressable
-                      key={p.id}
                       style={({ pressed }) => [
-                        styles.productCard,
-                        cardWidth ? { width: cardWidth } : { alignSelf: 'stretch' },
+                        styles.compactProductRow,
                         pressed && styles.productCardPressed,
                       ]}
                       onPress={() => addItem(p)}
                     >
-                      <View style={styles.productMediaWrap}>
-                        {p.image_url ? (
-                          <Image source={{ uri: p.image_url }} style={styles.productImage} />
-                        ) : (
-                          <View style={[styles.productInitial, { backgroundColor: dotColor + '18', borderColor: dotColor + '30' }]}>
-                            <Text style={[styles.productInitialText, { color: dotColor }]}>{initial}</Text>
-                          </View>
-                        )}
+                      <View style={[styles.compactProductDot, { backgroundColor: dotColor + '18', borderColor: dotColor + '35' }]}>
+                        <Text style={[styles.compactProductDotText, { color: dotColor }]}>{initial}</Text>
                       </View>
                       <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text numberOfLines={2} ellipsizeMode="tail" style={styles.productName}>{p.name}</Text>
-                        <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productMeta}>
-                          {p.category?.name ?? 'General'}
-                        </Text>
-                        <View style={styles.productMetaRow}>
-                          <View style={[styles.stockPill, lowStock && styles.stockPillLow]}>
-                            <Ionicons
-                              name={lowStock ? 'warning-outline' : 'checkmark-circle-outline'}
-                              size={11}
-                              color={lowStock ? COLORS.error : COLORS.success}
-                            />
-                            <Text style={[styles.stockPillText, lowStock && styles.stockPillTextLow]}>
-                              {p.stock_quantity} {p.unit}
-                            </Text>
-                          </View>
-                        </View>
+                        <Text style={styles.compactProductName} numberOfLines={1}>{p.name}</Text>
+                        <Text style={styles.compactProductMeta} numberOfLines={1}>{p.category?.name ?? 'General'}</Text>
                       </View>
-                      <View style={styles.productRight}>
-                        <Text style={styles.productPrice}>{currency} {Number(p.selling_price).toLocaleString()}</Text>
-                        <View style={styles.addBtn}>
-                          <LinearGradient
-                            colors={['#14B8A6', '#0D9488']}
-                            style={[StyleSheet.absoluteFill, { borderRadius: 10 }]}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                          />
-                          <Ionicons name="add" size={14} color={COLORS.white} />
-                          <Text style={styles.addBtnText}>Add to Cart</Text>
-                        </View>
+                      <View style={styles.compactProductRight}>
+                        <Text style={styles.compactProductPrice}>{currency} {Number(p.selling_price).toLocaleString()}</Text>
+                        <Text style={[styles.compactProductStock, lowStock && styles.compactProductStockLow]}>
+                          {p.stock_quantity} {p.unit}
+                        </Text>
                       </View>
                     </Pressable>
                   );
-                })
-              )}
-          </ScrollView>
+                }
+
+                return (
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.productCard,
+                      cardWidth ? { width: cardWidth } : { flex: 1 },
+                      pressed && styles.productCardPressed,
+                    ]}
+                    onPress={() => addItem(p)}
+                  >
+                    <View style={styles.productMediaWrap}>
+                      {p.image_url ? (
+                        <Image source={{ uri: p.image_url }} style={styles.productImage} />
+                      ) : (
+                        <View style={[styles.productInitial, { backgroundColor: dotColor + '18', borderColor: dotColor + '30' }]}>
+                          <Text style={[styles.productInitialText, { color: dotColor }]}>{initial}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text numberOfLines={2} ellipsizeMode="tail" style={styles.productName}>{p.name}</Text>
+                      <Text numberOfLines={1} ellipsizeMode="tail" style={styles.productMeta}>
+                        {p.category?.name ?? 'General'}
+                      </Text>
+                      <View style={styles.productMetaRow}>
+                        <View style={[styles.stockPill, lowStock && styles.stockPillLow]}>
+                          <Ionicons
+                            name={lowStock ? 'warning-outline' : 'checkmark-circle-outline'}
+                            size={11}
+                            color={lowStock ? COLORS.error : COLORS.success}
+                          />
+                          <Text style={[styles.stockPillText, lowStock && styles.stockPillTextLow]}>
+                            {p.stock_quantity} {p.unit}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                    <View style={styles.productRight}>
+                      <Text style={styles.productPrice}>{currency} {Number(p.selling_price).toLocaleString()}</Text>
+                      <View style={styles.addBtn}>
+                        <LinearGradient
+                          colors={['#14B8A6', '#0D9488']}
+                          style={[StyleSheet.absoluteFill, { borderRadius: 10 }]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                        />
+                        <Ionicons name="add" size={14} color={COLORS.white} />
+                        <Text style={styles.addBtnText}>Add to Cart</Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              }}
+            />
           </View>
         )}
 
@@ -1203,7 +1204,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    backgroundColor: 'transparent',
     zIndex: 30,
     elevation: 30,
   },
@@ -1237,46 +1238,49 @@ const styles = StyleSheet.create({
   },
   cartChipText: { color: COLORS.white, fontSize: FONTS.sizes.xs, fontWeight: '700' },
   layout: { flex: 1, flexDirection: 'row' },
-  productsPane: { flex: 1, minHeight: 0, borderRightWidth: 1, borderRightColor: COLORS.border },
+  productsPane: { flex: 1, backgroundColor: COLORS.background, borderRightWidth: 1, borderRightColor: COLORS.border },
   cartPane: { width: 360, minHeight: 0, padding: SPACING.base, backgroundColor: COLORS.surface, borderLeftWidth: 1, borderLeftColor: COLORS.border },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
-    margin: SPACING.base,
-    borderWidth: 1.5,
+    marginHorizontal: SPACING.base,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.sm,
+    borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.md,
     backgroundColor: COLORS.surface,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 1,
-    ...SHADOWS.xs,
+    height: 40,
   },
   searchInput: { flex: 1, color: COLORS.text, fontSize: FONTS.sizes.sm },
   categoryChips: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.base,
-    paddingBottom: SPACING.sm,
-    gap: SPACING.xs,
+    paddingTop: 4,
+    paddingBottom: 0,
   },
   categoryChipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'flex-start',
     paddingHorizontal: SPACING.base,
-    paddingBottom: SPACING.sm,
-    gap: SPACING.xs,
+    paddingTop: 4,
+    paddingBottom: 0,
+    gap: SPACING.sm,
   },
   categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surface,
-    alignSelf: 'flex-start',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 5,
+    backgroundColor: COLORS.surfaceAlt,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
   },
   categoryChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   categoryChipText: { color: COLORS.textSecondary, fontSize: FONTS.sizes.xs, fontWeight: '600' },
@@ -1286,7 +1290,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.xs,
     paddingHorizontal: SPACING.base,
-    paddingBottom: SPACING.sm,
+    paddingTop: SPACING.xs,
+    paddingBottom: SPACING.xs,
   },
   productViewSwitchBtn: {
     flexDirection: 'row',
@@ -1312,18 +1317,20 @@ const styles = StyleSheet.create({
   productViewSwitchTextActive: {
     color: COLORS.white,
   },
-  productsList: { paddingHorizontal: SPACING.base, paddingBottom: SPACING['2xl'], gap: SPACING.sm },
+  productsList: { paddingBottom: 20 },
   productCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginHorizontal: SPACING.base,
+    marginBottom: SPACING.sm,
     gap: SPACING.md,
     padding: SPACING.md,
     borderRadius: RADIUS.lg,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
-    ...SHADOWS.xs,
-  } as any,
+    ...SHADOWS.sm,
+  },
   productMediaWrap: {
     width: 44,
     height: 44,
@@ -1599,6 +1606,8 @@ const styles = StyleSheet.create({
   compactProductRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginHorizontal: SPACING.base,
+    marginBottom: SPACING.sm,
     gap: SPACING.sm,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -1607,6 +1616,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.sm,
     minHeight: 52,
+    ...SHADOWS.sm,
   },
   compactProductDot: {
     width: 30,

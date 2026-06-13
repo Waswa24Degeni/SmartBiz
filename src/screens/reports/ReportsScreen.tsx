@@ -1,921 +1,706 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, useWindowDimensions, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert,
+  useWindowDimensions, Platform, RefreshControl,
+} from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeSubscription } from '../../lib/hooks';
-import { COLORS, SPACING, FONTS, RADIUS, SHADOWS } from '../../lib/constants';
-import { format } from 'date-fns';
+import { COLORS, SPACING, FONTS, RADIUS, SHADOWS, BREAKPOINTS } from '../../lib/constants';
+import { format, startOfDay, startOfWeek, startOfMonth, startOfYear, subDays } from 'date-fns';
 
-type SalesReportItem = {
-  id: string;
-  product_name: string;
-  cost_price: number;
-  selling_price: number;
-  cashier_name: string;
-  quantity: number;
-  total: number;
-  created_at: string;
-};
+// Sub-components
+import { ReportsHeader } from './components/ReportsHeader';
+import { ReportTabs, type ReportTab } from './components/ReportTabs';
+import { PeriodSelector, type Period } from './components/PeriodSelector';
+import { QuickStats } from './components/QuickStats';
+import { KPIGrid, type KPIItem } from './components/KPIGrid';
+import { SalesChart } from './components/SalesChart';
+import { CategoryBreakdown } from './components/CategoryBreakdown';
+import { TopProducts } from './components/TopProducts';
+import { SalesDetailList, type SaleItem } from './components/SalesDetailList';
+import { InventoryReport } from './components/InventoryReport';
+import { CustomerReport } from './components/CustomerReport';
+import { InsightsCard } from './components/InsightsCard';
+import { ExportSheet } from './components/ExportSheet';
 
-type PaymentRow = {
-  id: string;
-  payment_type: string;
-  amount: number;
-  payer_phone: string | null;
-  status: string;
-  gateway_reference: string | null;
-  metadata: Record<string, any>;
-  initiated_at: string;
-};
+/* ─── helpers ──────────────────────────────────────────── */
 
-const STATUS_COLORS: Record<string, string> = {
-  completed: COLORS.success,
-  pending: COLORS.warning,
-  processing: COLORS.info,
-  failed: COLORS.error,
-  expired: COLORS.textMuted,
-};
+function getPeriodDays(period: Period): number {
+  switch (period) {
+    case 'day': return 1;
+    case 'week': return 7;
+    case 'month': return 30;
+    case 'year': return 365;
+  }
+}
+
+function getPeriodLabel(period: Period): string {
+  switch (period) {
+    case 'day': return 'Today';
+    case 'week': return 'This Week';
+    case 'month': return 'This Month';
+    case 'year': return 'This Year';
+  }
+}
+
+function getDateRangeLabel(period: Period): string {
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(start.getDate() - getPeriodDays(period));
+  return `${format(start, 'dd MMM')} — ${format(now, 'dd MMM yyyy')}`;
+}
+
+function fmtCurrency(n: number): string {
+  if (n >= 1_000_000) return `TZS ${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `TZS ${(n / 1_000).toFixed(1)}K`;
+  return `TZS ${n.toLocaleString()}`;
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function escapeCsv(value: string | number) {
+  const safe = String(value ?? '');
+  if (safe.includes(',') || safe.includes('"') || safe.includes('\n')) return `"${safe.replace(/"/g, '""')}"`;
+  return safe;
+}
+
+const CATEGORY_COLORS = ['#0D9488', '#3B82F6', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6'];
+
+/* ─── main component ───────────────────────────────────── */
 
 export function ReportsScreen() {
   const { business } = useAuth();
   const { width } = useWindowDimensions();
-  const isMobile = width < 768;
-  const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
-  const [period, setPeriod] = useState<'day' | 'week' | 'month'>('month');
-  const [reportType, setReportType] = useState<'sales' | 'advanced'>('sales');
-  const [salesItems, setSalesItems] = useState<SalesReportItem[]>([]);
-  const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const isMobile = width < BREAKPOINTS.tablet;
 
-  const periodMeta = useMemo(() => {
-    if (period === 'day') return { days: 1, label: 'Day' };
-    if (period === 'week') return { days: 7, label: 'Week' };
-    return { days: 30, label: 'Month' };
-  }, [period]);
+  const [activeTab, setActiveTab] = useState<ReportTab>('sales');
+  const [period, setPeriod] = useState<Period>('month');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportSheetVisible, setExportSheetVisible] = useState(false);
+
+  // Data
+  const [salesItems, setSalesItems] = useState<SaleItem[]>([]);
+  const [prevSalesItems, setPrevSalesItems] = useState<SaleItem[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [customerSales, setCustomerSales] = useState<Map<string, { spend: number; count: number }>>(new Map());
 
   const sinceDate = useMemo(() => {
     const now = new Date();
-    const d = new Date(now.getTime());
-    d.setDate(d.getDate() - periodMeta.days);
+    const d = new Date(now);
+    d.setDate(d.getDate() - getPeriodDays(period));
     return d.toISOString();
-  }, [periodMeta.days]);
+  }, [period]);
+
+  const prevSinceDate = useMemo(() => {
+    const days = getPeriodDays(period);
+    const now = new Date();
+    const d = new Date(now);
+    d.setDate(d.getDate() - days * 2);
+    return d.toISOString();
+  }, [period]);
+
+  /* ─── data fetching ────────────────────────── */
 
   const fetchSalesReport = useCallback(async (silent = false) => {
-    if (!business?.id) {
-      setLoading(false);
-      return;
-    }
-
+    if (!business?.id) { setLoading(false); return; }
     if (!silent) setLoading(true);
 
     try {
-      // First fetch all sales IDs for this business in the period
-      const { data: sales, error: saleErr } = await supabase
+      // Current period sales
+      const { data: sales } = await supabase
+        .from('sales')
+        .select('id, cashier_id, created_at, customer_id, cashier:users(full_name)')
+        .eq('business_id', business.id)
+        .gte('created_at', sinceDate)
+        .not('status', 'eq', 'cancelled');
+
+      const saleIds = (sales ?? []).map((s: any) => s.id);
+      const salesDataMap = new Map<string, { cashier_name: string; created_at: string; customer_id: string | null }>();
+      (sales ?? []).forEach((s: any) => {
+        salesDataMap.set(s.id, {
+          cashier_name: (s.cashier as any)?.full_name ?? 'Unknown',
+          created_at: s.created_at,
+          customer_id: s.customer_id ?? null,
+        });
+      });
+
+      // Build customer sales map
+      const custMap = new Map<string, { spend: number; count: number }>();
+      (sales ?? []).forEach((s: any) => {
+        if (s.customer_id) {
+          const existing = custMap.get(s.customer_id) ?? { spend: 0, count: 0 };
+          existing.count += 1;
+          custMap.set(s.customer_id, existing);
+        }
+      });
+
+      let items: SaleItem[] = [];
+      if (saleIds.length > 0) {
+        const { data } = await supabase
+          .from('sale_items')
+          .select('id, quantity, unit_price, total, sale_id, product_id')
+          .in('sale_id', saleIds);
+
+        const productIds = [...new Set((data ?? []).map((item: any) => item.product_id))];
+        const { data: productsData } = await supabase
+          .from('products')
+          .select('id, name, purchase_price, category_id, categories(name)')
+          .in('id', productIds);
+
+        const productsMap = new Map<string, any>();
+        (productsData ?? []).forEach((p: any) => {
+          productsMap.set(p.id, { name: p.name, purchase_price: Number(p.purchase_price) || 0, category: (p.categories as any)?.name ?? 'Uncategorized' });
+        });
+
+        items = (data ?? []).map((item: any) => {
+          const saleData = salesDataMap.get(item.sale_id);
+          // Update customer spend
+          const custId = (sales ?? []).find((s: any) => s.id === item.sale_id)?.customer_id;
+          if (custId) {
+            const c = custMap.get(custId) ?? { spend: 0, count: 0 };
+            c.spend += Number(item.total) || 0;
+            custMap.set(custId, c);
+          }
+          return {
+            id: item.id,
+            product_name: productsMap.get(item.product_id)?.name ?? 'Unknown',
+            cost_price: productsMap.get(item.product_id)?.purchase_price ?? 0,
+            selling_price: Number(item.unit_price) || 0,
+            cashier_name: saleData?.cashier_name ?? 'Unknown',
+            quantity: Number(item.quantity) || 0,
+            total: Number(item.total) || 0,
+            created_at: saleData?.created_at ?? new Date().toISOString(),
+            _category: productsMap.get(item.product_id)?.category ?? 'Uncategorized',
+            _product_id: item.product_id,
+          };
+        }) as any;
+      }
+
+      setSalesItems(items);
+      setCustomerSales(custMap);
+
+      // Previous period for trends
+      const prevEnd = sinceDate;
+      const { data: prevSales } = await supabase
         .from('sales')
         .select('id')
         .eq('business_id', business.id)
-        .gte('created_at', sinceDate);
+        .gte('created_at', prevSinceDate)
+        .lt('created_at', prevEnd)
+        .not('status', 'eq', 'cancelled');
 
-      if (saleErr) throw saleErr;
+      const prevSaleIds = (prevSales ?? []).map((s: any) => s.id);
+      if (prevSaleIds.length > 0) {
+        const { data: prevItemsData } = await supabase
+          .from('sale_items')
+          .select('id, quantity, unit_price, total, sale_id, product_id')
+          .in('sale_id', prevSaleIds);
 
-      const saleIds = (sales ?? []).map((s: any) => s.id);
-      if (saleIds.length === 0) {
-        setSalesItems([]);
-        setLoading(false);
-        return;
+        const prevProductIds = [...new Set((prevItemsData ?? []).map((item: any) => item.product_id))];
+        const { data: prevProdsData } = await supabase
+          .from('products')
+          .select('id, purchase_price')
+          .in('id', prevProductIds);
+
+        const prevProdsMap = new Map<string, number>();
+        (prevProdsData ?? []).forEach((p: any) => prevProdsMap.set(p.id, Number(p.purchase_price) || 0));
+
+        setPrevSalesItems((prevItemsData ?? []).map((item: any) => ({
+          id: item.id,
+          product_name: '',
+          cost_price: prevProdsMap.get(item.product_id) ?? 0,
+          selling_price: Number(item.unit_price) || 0,
+          cashier_name: '',
+          quantity: Number(item.quantity) || 0,
+          total: Number(item.total) || 0,
+          created_at: '',
+        })));
+      } else {
+        setPrevSalesItems([]);
       }
-
-      // Then fetch sale_items with product and cashier details
-      const { data, error } = await supabase
-        .from('sale_items')
-        .select(`
-          id,
-          quantity,
-          unit_price,
-          total,
-          sale_id,
-          product_id
-        `)
-        .in('sale_id', saleIds);
-
-      if (error) throw error;
-
-      // Fetch all products and sales data we need
-      const productIds = [...new Set((data ?? []).map((item: any) => item.product_id))];
-      const salesDataMap = new Map();
-
-      const { data: salesData } = await supabase
-        .from('sales')
-        .select('id, cashier_id, created_at, cashier:users(full_name)')
-        .in('id', saleIds);
-
-      (salesData ?? []).forEach((s: any) => {
-        salesDataMap.set(s.id, { cashier_name: s.cashier?.full_name ?? 'Unknown', created_at: s.created_at });
-      });
-
-      const { data: productsData } = await supabase
-        .from('products')
-        .select('id, name, purchase_price')
-        .in('id', productIds);
-
-      const productsMap = new Map();
-      (productsData ?? []).forEach((p: any) => {
-        productsMap.set(p.id, { name: p.name, purchase_price: Number(p.purchase_price) || 0 });
-      });
-
-      // Merge everything together
-      const items: SalesReportItem[] = (data ?? []).map((item: any) => ({
-        id: item.id,
-        product_name: productsMap.get(item.product_id)?.name ?? 'Unknown',
-        cost_price: productsMap.get(item.product_id)?.purchase_price ?? 0,
-        selling_price: Number(item.unit_price) || 0,
-        cashier_name: salesDataMap.get(item.sale_id)?.cashier_name ?? 'Unknown',
-        quantity: Number(item.quantity) || 0,
-        total: Number(item.total) || 0,
-        created_at: salesDataMap.get(item.sale_id)?.created_at ?? new Date().toISOString(),
-      }));
-
-      setSalesItems(items);
     } catch (err: any) {
       console.error('Error fetching sales report:', err);
-      Alert.alert('Error', err.message || 'Failed to fetch sales report');
+      if (!silent) Alert.alert('Error', err.message || 'Failed to fetch report');
       setSalesItems([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [business?.id, sinceDate]);
+  }, [business?.id, sinceDate, prevSinceDate]);
 
-  const fetchPayments = useCallback(async () => {
+  const fetchInventoryData = useCallback(async () => {
     if (!business?.id) return;
-    try {
-      const { data } = await supabase
-        .from('payments')
-        .select('id, payment_type, amount, payer_phone, status, gateway_reference, metadata, initiated_at')
-        .eq('business_id', business.id)
-        .gte('initiated_at', sinceDate)
-        .order('initiated_at', { ascending: false })
-        .limit(100);
-      setPayments((data as PaymentRow[]) ?? []);
-    } catch (err: any) {
-      console.error('Error fetching payments:', err);
-    }
-  }, [business?.id, sinceDate]);
+    const { data } = await supabase
+      .from('products')
+      .select('id, name, selling_price, purchase_price, stock_quantity, low_stock_threshold, is_active')
+      .eq('business_id', business.id)
+      .eq('is_active', true);
+    setProducts(data ?? []);
+  }, [business?.id]);
+
+  const fetchCustomerData = useCallback(async () => {
+    if (!business?.id) return;
+    const { data } = await supabase
+      .from('customers')
+      .select('id, name, created_at')
+      .eq('business_id', business.id);
+    setCustomers(data ?? []);
+  }, [business?.id]);
 
   useEffect(() => {
     fetchSalesReport();
-    fetchPayments();
-  }, [fetchSalesReport, fetchPayments]);
+    fetchInventoryData();
+    fetchCustomerData();
+  }, [fetchSalesReport, fetchInventoryData, fetchCustomerData]);
 
   const realtimeEnabled = !!business?.id && Platform.OS !== 'web';
   useRealtimeSubscription('reports-sales-rt', 'sales', () => fetchSalesReport(true), realtimeEnabled);
   useRealtimeSubscription('reports-items-rt', 'sale_items', () => fetchSalesReport(true), realtimeEnabled);
 
-  const reportMetrics = useMemo(() => {
-    const totalRevenue = salesItems.reduce((sum, item) => sum + item.total, 0);
-    const totalCost = salesItems.reduce((sum, item) => sum + (item.cost_price * item.quantity), 0);
-    const netProfit = totalRevenue - totalCost;
-    const totalItemsSold = salesItems.reduce((sum, item) => sum + item.quantity, 0);
-    const totalTransactions = salesItems.length;
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchSalesReport();
+    fetchInventoryData();
+    fetchCustomerData();
+  }, [fetchSalesReport, fetchInventoryData, fetchCustomerData]);
 
-    return { totalRevenue, totalCost, netProfit, totalItemsSold, totalTransactions };
+  /* ─── computed metrics ─────────────────────── */
+
+  const metrics = useMemo(() => {
+    const totalRevenue = salesItems.reduce((s, i) => s + i.total, 0);
+    const totalCost = salesItems.reduce((s, i) => s + (i.cost_price * i.quantity), 0);
+    const netProfit = totalRevenue - totalCost;
+    const totalItemsSold = salesItems.reduce((s, i) => s + i.quantity, 0);
+    const totalTransactions = salesItems.length;
+    const avgSale = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
+
+    const prevRevenue = prevSalesItems.reduce((s, i) => s + i.total, 0);
+    const prevProfit = prevSalesItems.reduce((s, i) => s + i.total - (i.cost_price * i.quantity), 0);
+    const prevItems = prevSalesItems.reduce((s, i) => s + i.quantity, 0);
+    const prevTx = prevSalesItems.length;
+
+    const trendRev = prevRevenue > 0 ? ((totalRevenue - prevRevenue) / prevRevenue) * 100 : 0;
+    const trendProfit = prevProfit > 0 ? ((netProfit - prevProfit) / prevProfit) * 100 : 0;
+    const trendItems = prevItems > 0 ? ((totalItemsSold - prevItems) / prevItems) * 100 : 0;
+    const trendTx = prevTx > 0 ? ((totalTransactions - prevTx) / prevTx) * 100 : 0;
+
+    return {
+      totalRevenue, totalCost, netProfit, totalItemsSold,
+      totalTransactions, avgSale,
+      trendRev, trendProfit, trendItems, trendTx,
+    };
+  }, [salesItems, prevSalesItems]);
+
+  const quickStatsData = useMemo(() => [
+    { label: "Revenue", value: fmtCurrency(metrics.totalRevenue), icon: 'cash-outline', color: COLORS.success },
+    { label: "Profit", value: fmtCurrency(metrics.netProfit), icon: 'trending-up-outline', color: COLORS.primary },
+    { label: "Orders", value: String(metrics.totalTransactions), icon: 'receipt-outline', color: COLORS.info },
+    { label: "Items", value: String(metrics.totalItemsSold), icon: 'cube-outline', color: COLORS.accent },
+  ], [metrics]);
+
+  const kpiItems = useMemo((): KPIItem[] => [
+    { label: 'Total Revenue', value: fmtCurrency(metrics.totalRevenue), icon: 'cash-outline', color: COLORS.success, trend: metrics.trendRev },
+    { label: 'Net Profit', value: fmtCurrency(metrics.netProfit), icon: 'trending-up-outline', color: COLORS.primary, trend: metrics.trendProfit },
+    { label: 'Items Sold', value: String(metrics.totalItemsSold), icon: 'cube-outline', color: COLORS.info, trend: metrics.trendItems },
+    { label: 'Transactions', value: String(metrics.totalTransactions), icon: 'receipt-outline', color: COLORS.accent, trend: metrics.trendTx },
+    { label: 'Avg Sale', value: fmtCurrency(metrics.avgSale), icon: 'calculator-outline', color: '#8B5CF6' },
+    { label: 'Low Stock', value: String(products.filter(p => p.stock_quantity <= p.low_stock_threshold).length), icon: 'warning-outline', color: COLORS.warning },
+  ], [metrics, products]);
+
+  // Chart data — sales by time bucket
+  const chartData = useMemo(() => {
+    if (period === 'day') {
+      const buckets = [9, 12, 15, 18, 21];
+      const labels = ['9AM', '12PM', '3PM', '6PM', '9PM'];
+      const values = buckets.map((h) => {
+        const now = new Date();
+        const from = new Date(now); from.setHours(h, 0, 0, 0);
+        const to = new Date(now); to.setHours(h + 2, 59, 59, 999);
+        return salesItems
+          .filter((s) => { const d = new Date(s.created_at); return d >= from && d <= to; })
+          .reduce((sum, s) => sum + s.total, 0);
+      });
+      return { labels, values };
+    }
+    if (period === 'week') {
+      const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const values = [0, 1, 2, 3, 4, 5, 6].map((dayOffset) => {
+        const now = new Date();
+        const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+        const target = new Date(weekStart);
+        target.setDate(target.getDate() + dayOffset);
+        const nextDay = new Date(target);
+        nextDay.setDate(nextDay.getDate() + 1);
+        return salesItems
+          .filter((s) => { const d = new Date(s.created_at); return d >= target && d < nextDay; })
+          .reduce((sum, s) => sum + s.total, 0);
+      });
+      return { labels, values };
+    }
+    // month/year — show weeks
+    const labels = ['W1', 'W2', 'W3', 'W4'];
+    const now = new Date();
+    const mStart = startOfMonth(now);
+    const values = [0, 1, 2, 3].map((wk) => {
+      const from = new Date(mStart);
+      from.setDate(from.getDate() + wk * 7);
+      const to = new Date(from);
+      to.setDate(to.getDate() + 7);
+      return salesItems
+        .filter((s) => { const d = new Date(s.created_at); return d >= from && d < to; })
+        .reduce((sum, s) => sum + s.total, 0);
+    });
+    return { labels, values };
+  }, [salesItems, period]);
+
+  // Category breakdown
+  const categoryData = useMemo(() => {
+    const map = new Map<string, number>();
+    (salesItems as any[]).forEach((item) => {
+      const cat = item._category ?? 'Uncategorized';
+      map.set(cat, (map.get(cat) ?? 0) + item.total);
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map((([name, value], i) => ({
+        name,
+        value,
+        color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+      })));
   }, [salesItems]);
 
-  const escapeHtml = (value: string) => value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  // Top products
+  const topProductsData = useMemo(() => {
+    const map = new Map<string, { value: number; quantity: number }>();
+    salesItems.forEach((item) => {
+      const existing = map.get(item.product_name) ?? { value: 0, quantity: 0 };
+      existing.value += item.total;
+      existing.quantity += item.quantity;
+      map.set(item.product_name, existing);
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => b[1].value - a[1].value)
+      .slice(0, 8)
+      .map(([name, data]) => ({ name, ...data }));
+  }, [salesItems]);
 
-  const escapeCsv = (value: string | number) => {
-    const safe = String(value ?? '');
-    if (safe.includes(',') || safe.includes('"') || safe.includes('\n')) {
-      return `"${safe.replace(/"/g, '""')}"`;
-    }
-    return safe;
-  };
-
-  const buildSalesReportPdf = () => {
-    if (!business?.id) throw new Error('Business context is missing. Please sign in again.');
-    if (salesItems.length === 0) throw new Error(`There are no sales transactions for this ${periodMeta.label.toLowerCase()}.`);
-
-    const reportDate = format(new Date(), 'dd MMM yyyy, HH:mm');
-    const rows = salesItems.map((item) => {
-      const itemProfit = (item.selling_price - item.cost_price) * item.quantity;
-      return `
-      <tr>
-        <td>${escapeHtml(item.product_name)}</td>
-        <td style="text-align:right;">TZS ${item.cost_price.toLocaleString()}</td>
-        <td style="text-align:right;">TZS ${item.selling_price.toLocaleString()}</td>
-        <td>${escapeHtml(item.cashier_name)}</td>
-        <td style="text-align:center;">${item.quantity}</td>
-        <td style="text-align:right;">TZS ${item.total.toLocaleString()}</td>
-        <td style="text-align:right;">TZS ${itemProfit.toLocaleString()}</td>
-      </tr>
-    `;
-    }).join('');
-
-    return `
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111827; padding: 24px; }
-            h1 { font-size: 22px; margin: 0 0 8px; }
-            .meta { color: #4B5563; font-size: 12px; margin-bottom: 20px; }
-            h2 { font-size: 14px; margin-top: 18px; margin-bottom: 8px; font-weight: 700; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 16px; }
-            th, td { border: 1px solid #E5E7EB; padding: 8px; text-align: left; }
-            th { background: #F3F4F6; font-weight: 700; }
-            .summary { display: flex; gap: 20px; margin-top: 20px; padding-top: 16px; border-top: 2px solid #E5E7EB; flex-wrap: wrap; }
-            .summary-item { }
-            .summary-label { color: #6B7280; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-            .summary-value { font-size: 16px; font-weight: 800; color: #111827; margin-top: 4px; }
-            .profit { color: #10B981; }
-          </style>
-        </head>
-        <body>
-          <h1>${escapeHtml(business.name)} - Sales Report</h1>
-          <div class="meta">Period: ${periodMeta.label} • Generated: ${reportDate}</div>
-
-          <h2>Sales Transactions</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Product Name</th>
-                <th style="text-align:right;">Cost Price</th>
-                <th style="text-align:right;">Selling Price</th>
-                <th>Cashier</th>
-                <th style="text-align:center;">Quantity</th>
-                <th style="text-align:right;">Total Amount</th>
-                <th style="text-align:right;">Net Profit</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-
-          <div class="summary">
-            <div class="summary-item">
-              <div class="summary-label">Total Revenue</div>
-              <div class="summary-value">TZS ${reportMetrics.totalRevenue.toLocaleString()}</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">Total Cost</div>
-              <div class="summary-value">TZS ${reportMetrics.totalCost.toLocaleString()}</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label profit">NET PROFIT</div>
-              <div class="summary-value profit">TZS ${reportMetrics.netProfit.toLocaleString()}</div>
-            </div>
-            <div class="summary-item">
-              <div class="summary-label">Items Sold</div>
-              <div class="summary-value">${reportMetrics.totalItemsSold}</div>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-  };
-
-  const buildAdvancedReportPdf = () => {
-    if (!business?.id) throw new Error('Business context is missing. Please sign in again.');
-    if (payments.length === 0 && salesItems.length === 0) {
-      throw new Error(`There is no data for this ${periodMeta.label.toLowerCase()}.`);
-    }
-
-    const reportDate = format(new Date(), 'dd MMM yyyy, HH:mm');
-    const paymentRows = payments.map((p) => `
-      <tr>
-        <td>${escapeHtml(p.payment_type)}</td>
-        <td style="text-align:right;">TZS ${Number(p.amount).toLocaleString()}</td>
-        <td>${escapeHtml(p.payer_phone ?? '—')}</td>
-        <td>${escapeHtml(p.status)}</td>
-        <td>${format(new Date(p.initiated_at), 'dd MMM yyyy')}</td>
-      </tr>
-    `).join('');
-
-    return `
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111827; padding: 24px; }
-            h1 { font-size: 22px; margin: 0 0 8px; }
-            .meta { color: #4B5563; font-size: 12px; margin-bottom: 20px; }
-            .cards { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-            .card { flex: 1; border: 1px solid #E5E7EB; border-radius: 8px; padding: 10px; min-width: 120px; }
-            .card .label { color: #6B7280; font-size: 11px; font-weight: 700; }
-            .card .value { margin-top: 4px; font-size: 15px; font-weight: 700; }
-            h2 { font-size: 14px; margin-top: 18px; margin-bottom: 8px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #E5E7EB; padding: 8px; text-align: left; }
-            th { background: #F3F4F6; }
-          </style>
-        </head>
-        <body>
-          <h1>${escapeHtml(business.name)} - Advanced Report</h1>
-          <div class="meta">Period: ${periodMeta.label} • Generated: ${reportDate}</div>
-
-          <div class="cards">
-            <div class="card"><div class="label">Total Revenue</div><div class="value">TZS ${reportMetrics.totalRevenue.toLocaleString()}</div></div>
-            <div class="card"><div class="label">Net Profit</div><div class="value">TZS ${reportMetrics.netProfit.toLocaleString()}</div></div>
-            <div class="card"><div class="label">Items Sold</div><div class="value">${reportMetrics.totalItemsSold}</div></div>
-            <div class="card"><div class="label">Transactions</div><div class="value">${reportMetrics.totalTransactions}</div></div>
-          </div>
-
-          <h2>Payment Transactions</h2>
-          <table>
-            <thead><tr><th>Type</th><th style="text-align:right;">Amount</th><th>Phone</th><th>Status</th><th>Date</th></tr></thead>
-            <tbody>${paymentRows || '<tr><td colspan="5">No payment transactions found.</td></tr>'}</tbody>
-          </table>
-        </body>
-      </html>
-    `;
-  };
-
-  const buildSalesReportCsv = () => {
-    if (salesItems.length === 0) throw new Error(`There are no sales transactions for this ${periodMeta.label.toLowerCase()}.`);
-    const header = ['Product Name', 'Cost Price', 'Cashier', 'Selling Price', 'Quantity', 'Total Amount', 'Net Profit'];
-    const rows = salesItems.map((item) => {
-      const itemProfit = (item.selling_price - item.cost_price) * item.quantity;
-      return [
-        escapeCsv(item.product_name),
-        escapeCsv(item.cost_price),
-        escapeCsv(item.cashier_name),
-        escapeCsv(item.selling_price),
-        escapeCsv(item.quantity),
-        escapeCsv(item.total),
-        escapeCsv(itemProfit),
-      ].join(',');
+  // Inventory report data
+  const inventoryData = useMemo(() => {
+    const productSales = new Map<string, { quantity: number; revenue: number }>();
+    salesItems.forEach((item) => {
+      const key = (item as any)._product_id ?? item.product_name;
+      const existing = productSales.get(key) ?? { quantity: 0, revenue: 0 };
+      existing.quantity += item.quantity;
+      existing.revenue += item.total;
+      productSales.set(key, existing);
     });
 
+    const enriched = products.map((p) => {
+      const sales = productSales.get(p.id) ?? { quantity: 0, revenue: 0 };
+      const margin = p.selling_price > 0 ? ((p.selling_price - (p.purchase_price ?? 0)) / p.selling_price) * 100 : 0;
+      return { ...p, sold: sales.quantity, revenue: sales.revenue, profit_margin: margin };
+    });
+
+    return {
+      topSelling: enriched.filter((p) => p.sold > 0).sort((a, b) => b.sold - a.sold).slice(0, 5).map((p) => ({
+        name: p.name, quantity: p.sold, revenue: p.revenue, stock: p.stock_quantity, low_stock_threshold: p.low_stock_threshold, profit_margin: p.profit_margin,
+      })),
+      slowMoving: enriched.filter((p) => p.sold === 0 || p.sold <= 2).sort((a, b) => a.sold - b.sold).slice(0, 5).map((p) => ({
+        name: p.name, quantity: p.sold, revenue: p.revenue, stock: p.stock_quantity, low_stock_threshold: p.low_stock_threshold, profit_margin: p.profit_margin,
+      })),
+      lowStock: enriched.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= p.low_stock_threshold).slice(0, 5).map((p) => ({
+        name: p.name, quantity: p.sold, revenue: p.revenue, stock: p.stock_quantity, low_stock_threshold: p.low_stock_threshold, profit_margin: p.profit_margin,
+      })),
+      outOfStock: enriched.filter((p) => p.stock_quantity === 0).slice(0, 5).map((p) => ({
+        name: p.name, quantity: p.sold, revenue: p.revenue, stock: p.stock_quantity, low_stock_threshold: p.low_stock_threshold, profit_margin: p.profit_margin,
+      })),
+      mostProfitable: enriched.filter((p) => p.sold > 0).sort((a, b) => b.profit_margin - a.profit_margin).slice(0, 5).map((p) => ({
+        name: p.name, quantity: p.sold, revenue: p.revenue, stock: p.stock_quantity, low_stock_threshold: p.low_stock_threshold, profit_margin: p.profit_margin,
+      })),
+    };
+  }, [products, salesItems]);
+
+  // Customer report data
+  const customerReportData = useMemo(() => {
+    const customerNames = new Map<string, string>();
+    customers.forEach((c: any) => customerNames.set(c.id, c.name));
+
+    const topCustomers = Array.from(customerSales.entries())
+      .map(([id, data]) => ({
+        name: customerNames.get(id) ?? 'Unknown',
+        total_spend: data.spend,
+        order_count: data.count,
+      }))
+      .sort((a, b) => b.total_spend - a.total_spend)
+      .slice(0, 8);
+
+    const totalWithSales = customerSales.size;
+    const repeatCustomers = Array.from(customerSales.values()).filter((c) => c.count > 1).length;
+    const repeatRate = totalWithSales > 0 ? (repeatCustomers / totalWithSales) * 100 : 0;
+    const totalSpend = Array.from(customerSales.values()).reduce((s, c) => s + c.spend, 0);
+    const avgSpend = totalWithSales > 0 ? totalSpend / totalWithSales : 0;
+
+    const newCustomers = customers.filter((c: any) => new Date(c.created_at) >= new Date(sinceDate)).length;
+
+    return { topCustomers, repeatRate, avgSpend, newCustomers, totalCustomers: customers.length };
+  }, [customerSales, customers, sinceDate]);
+
+  // Insights
+  const insights = useMemo(() => {
+    const list: string[] = [];
+    if (metrics.trendRev > 0) list.push(`Revenue increased by ${metrics.trendRev.toFixed(0)}% compared to last period.`);
+    else if (metrics.trendRev < 0) list.push(`Revenue decreased by ${Math.abs(metrics.trendRev).toFixed(0)}% compared to last period.`);
+
+    if (topProductsData.length > 0) list.push(`${topProductsData[0].name} is your best seller with ${topProductsData[0].quantity} units sold.`);
+
+    const lowStockCount = products.filter((p) => p.stock_quantity > 0 && p.stock_quantity <= p.low_stock_threshold).length;
+    if (lowStockCount > 0) list.push(`${lowStockCount} product${lowStockCount > 1 ? 's are' : ' is'} below stock threshold.`);
+
+    if (metrics.avgSale > 0) list.push(`Average transaction value is ${fmtCurrency(metrics.avgSale)}.`);
+
+    const outOfStockCount = products.filter((p) => p.stock_quantity === 0).length;
+    if (outOfStockCount > 0) list.push(`${outOfStockCount} product${outOfStockCount > 1 ? 's are' : ' is'} out of stock.`);
+
+    if (customerReportData.repeatRate > 0) list.push(`${customerReportData.repeatRate.toFixed(0)}% of customers are repeat buyers.`);
+
+    return list;
+  }, [metrics, topProductsData, products, customerReportData]);
+
+  /* ─── export logic ─────────────────────────── */
+
+  const buildSalesReportPdf = useCallback(() => {
+    if (!business?.id) throw new Error('Business context is missing.');
+    if (salesItems.length === 0) throw new Error('No sales transactions for this period.');
+
+    const reportDate = format(new Date(), 'dd MMM yyyy, HH:mm');
+    const rows = salesItems.map((item) => {
+      const profit = (item.selling_price - item.cost_price) * item.quantity;
+      return `<tr><td>${escapeHtml(item.product_name)}</td><td style="text-align:right;">TZS ${item.cost_price.toLocaleString()}</td><td style="text-align:right;">TZS ${item.selling_price.toLocaleString()}</td><td>${escapeHtml(item.cashier_name)}</td><td style="text-align:center;">${item.quantity}</td><td style="text-align:right;">TZS ${item.total.toLocaleString()}</td><td style="text-align:right;">TZS ${profit.toLocaleString()}</td></tr>`;
+    }).join('');
+
+    return `<html><head><meta charset="utf-8"/><style>body{font-family:-apple-system,sans-serif;color:#111827;padding:24px}h1{font-size:22px;margin:0 0 8px}.meta{color:#4B5563;font-size:12px;margin-bottom:20px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #E5E7EB;padding:8px;text-align:left}th{background:#F3F4F6;font-weight:700}.summary{display:flex;gap:20px;margin-top:20px;padding-top:16px;border-top:2px solid #E5E7EB;flex-wrap:wrap}.summary-label{color:#6B7280;font-size:11px;font-weight:700;text-transform:uppercase}.summary-value{font-size:16px;font-weight:800;color:#111827;margin-top:4px}.profit{color:#10B981}</style></head><body><h1>${escapeHtml(business.name)} - Sales Report</h1><div class="meta">Period: ${getPeriodLabel(period)} • Generated: ${reportDate}</div><table><thead><tr><th>Product</th><th style="text-align:right;">Cost</th><th style="text-align:right;">Selling</th><th>Cashier</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Total</th><th style="text-align:right;">Profit</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><div><div class="summary-label">Revenue</div><div class="summary-value">TZS ${metrics.totalRevenue.toLocaleString()}</div></div><div><div class="summary-label">Cost</div><div class="summary-value">TZS ${metrics.totalCost.toLocaleString()}</div></div><div><div class="summary-label profit">NET PROFIT</div><div class="summary-value profit">TZS ${metrics.netProfit.toLocaleString()}</div></div></div></body></html>`;
+  }, [business, salesItems, metrics, period]);
+
+  const buildCsv = useCallback(() => {
+    if (salesItems.length === 0) throw new Error('No sales transactions for this period.');
+    const header = ['Product', 'Cost Price', 'Selling Price', 'Cashier', 'Quantity', 'Total', 'Profit'];
+    const rows = salesItems.map((item) => {
+      const profit = (item.selling_price - item.cost_price) * item.quantity;
+      return [escapeCsv(item.product_name), escapeCsv(item.cost_price), escapeCsv(item.selling_price), escapeCsv(item.cashier_name), escapeCsv(item.quantity), escapeCsv(item.total), escapeCsv(profit)].join(',');
+    });
     rows.push('');
-    rows.push(['', '', '', '', '', 'NET PROFIT', escapeCsv(reportMetrics.netProfit)].join(','));
+    rows.push(['', '', '', '', '', 'NET PROFIT', escapeCsv(metrics.netProfit)].join(','));
     return [header.join(','), ...rows].join('\n');
-  };
+  }, [salesItems, metrics]);
 
-  const buildAdvancedReportCsv = () => {
-    if (payments.length === 0 && salesItems.length === 0) {
-      throw new Error(`There is no data for this ${periodMeta.label.toLowerCase()}.`);
+  const handlePrint = useCallback(async () => {
+    setExporting(true);
+    try {
+      await Print.printAsync({ html: buildSalesReportPdf() });
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Could not print.');
+    } finally {
+      setExporting(false);
     }
+  }, [buildSalesReportPdf]);
 
-    const header = ['Type', 'Amount', 'Phone', 'Status', 'Date'];
-    const rows = payments.map((p) => [
-      escapeCsv(p.payment_type),
-      escapeCsv(Number(p.amount)),
-      escapeCsv(p.payer_phone ?? '—'),
-      escapeCsv(p.status),
-      escapeCsv(format(new Date(p.initiated_at), 'dd MMM yyyy')),
-    ].join(','));
-
-    return [header.join(','), ...rows].join('\n');
-  };
-
-  const renderPdfToAppStorage = async (html: string) => {
-    const printed = await Print.printToFileAsync({ html });
-    const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
-    if (!baseDir) throw new Error('Cannot access local storage on this device.');
-    const dest = `${baseDir}smartbiz-${reportType}-report-${period}-${Date.now()}.pdf`;
-    await FileSystem.copyAsync({ from: printed.uri, to: dest });
-    return dest;
-  };
-
-  const getAndroidDownloadsUri = (fileName: string) => `file:///storage/emulated/0/Download/${fileName}`;
-
-  const printReport = async () => {
-    const html = reportType === 'sales' ? buildSalesReportPdf() : buildAdvancedReportPdf();
-    await Print.printAsync({ html });
-  };
-
-  const sharePdf = async () => {
-    if (Platform.OS === 'web') {
-      const html = reportType === 'sales' ? buildSalesReportPdf() : buildAdvancedReportPdf();
-      await Print.printAsync({ html });
-      return;
-    }
-
-    const html = reportType === 'sales' ? buildSalesReportPdf() : buildAdvancedReportPdf();
-    const localPdf = await renderPdfToAppStorage(html);
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(localPdf, {
-        dialogTitle: `Share ${reportType} report PDF`,
-        mimeType: 'application/pdf',
-        UTI: 'com.adobe.pdf',
-      });
-      return;
-    }
-
-    Alert.alert('Saved', `PDF saved to app storage:\n${localPdf}`);
-  };
-
-  const saveCsvToDevice = async () => {
-    const csvContent = reportType === 'sales' ? buildSalesReportCsv() : buildAdvancedReportCsv();
-    const fileName = `smartbiz-${reportType}-report-${period}-${Date.now()}.csv`;
-
-    if (Platform.OS === 'web') {
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      return;
-    }
-
-    if (Platform.OS === 'android') {
-      const targetUri = getAndroidDownloadsUri(fileName);
-      try {
-        await FileSystem.writeAsStringAsync(targetUri, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
-        Alert.alert('Saved', `CSV saved to Downloads:\n${targetUri}`);
+  const handleExcel = useCallback(async () => {
+    setExporting(true);
+    try {
+      const csv = buildCsv();
+      const fileName = `smartbiz-report-${period}-${Date.now()}.csv`;
+      if (Platform.OS === 'web') {
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.setAttribute('download', fileName);
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        URL.revokeObjectURL(url);
         return;
-      } catch {
-        // Some devices restrict direct Downloads writes in managed apps.
       }
-    }
-
-    const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
-    if (!baseDir) throw new Error('Cannot access local storage on this device.');
-    const dest = `${baseDir}${fileName}`;
-    await FileSystem.writeAsStringAsync(dest, csvContent, { encoding: FileSystem.EncodingType.UTF8 });
-    Alert.alert('Saved', `CSV saved to app storage:\n${dest}`);
-  };
-
-  const handlePrintReport = async () => {
-    setExporting(true);
-    try {
-      await printReport();
+      const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+      if (!baseDir) throw new Error('Cannot access storage.');
+      const dest = `${baseDir}${fileName}`;
+      await FileSystem.writeAsStringAsync(dest, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(dest, { mimeType: 'text/csv', dialogTitle: 'Export CSV' });
+      } else {
+        Alert.alert('Saved', `CSV saved to: ${dest}`);
+      }
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not print report.');
+      Alert.alert('Error', e?.message ?? 'Could not export.');
     } finally {
       setExporting(false);
     }
-  };
+  }, [buildCsv, period]);
 
-  const handleSharePdf = async () => {
+  const handleSharePdf = useCallback(async () => {
     setExporting(true);
     try {
-      await sharePdf();
+      const html = buildSalesReportPdf();
+      if (Platform.OS === 'web') { await Print.printAsync({ html }); return; }
+      const printed = await Print.printToFileAsync({ html });
+      const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+      if (!baseDir) throw new Error('Cannot access storage.');
+      const dest = `${baseDir}smartbiz-report-${period}-${Date.now()}.pdf`;
+      await FileSystem.copyAsync({ from: printed.uri, to: dest });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(dest, { mimeType: 'application/pdf', dialogTitle: 'Share Report PDF', UTI: 'com.adobe.pdf' });
+      } else {
+        Alert.alert('Saved', `PDF saved to: ${dest}`);
+      }
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not export report PDF.');
+      Alert.alert('Error', e?.message ?? 'Could not share PDF.');
     } finally {
       setExporting(false);
     }
+  }, [buildSalesReportPdf, period]);
+
+  /* ─── render ───────────────────────────────── */
+
+  const renderSalesTab = () => (
+    <>
+      <KPIGrid items={kpiItems} />
+      <SalesChart title="Sales Trend" subtitle={getPeriodLabel(period)} labels={chartData.labels} values={chartData.values} />
+      {categoryData.length > 0 && <CategoryBreakdown title="Category Breakdown" items={categoryData} />}
+      {topProductsData.length > 0 && <TopProducts title="Top Products" items={topProductsData} />}
+      <SalesDetailList items={salesItems} />
+    </>
+  );
+
+  const renderProfitTab = () => {
+    const profitKpi: KPIItem[] = [
+      { label: 'Gross Revenue', value: fmtCurrency(metrics.totalRevenue), icon: 'cash-outline', color: COLORS.success, trend: metrics.trendRev },
+      { label: 'Total Cost', value: fmtCurrency(metrics.totalCost), icon: 'cart-outline', color: COLORS.error },
+      { label: 'Net Profit', value: fmtCurrency(metrics.netProfit), icon: 'trending-up-outline', color: COLORS.primary, trend: metrics.trendProfit },
+      { label: 'Profit Margin', value: metrics.totalRevenue > 0 ? `${((metrics.netProfit / metrics.totalRevenue) * 100).toFixed(1)}%` : '0%', icon: 'pie-chart-outline', color: COLORS.accent },
+    ];
+    return (
+      <>
+        <KPIGrid items={profitKpi} />
+        <SalesChart title="Profit Trend" subtitle={getPeriodLabel(period)} labels={chartData.labels} values={chartData.values.map((v, i) => {
+          // Approximate profit per bucket
+          const ratio = metrics.totalRevenue > 0 ? metrics.netProfit / metrics.totalRevenue : 0;
+          return Math.max(0, Math.round(v * ratio));
+        })} />
+        {topProductsData.length > 0 && (
+          <TopProducts title="Most Profitable Products" items={topProductsData.map((p) => {
+            const item = salesItems.find((s) => s.product_name === p.name);
+            const profitPerUnit = item ? item.selling_price - item.cost_price : 0;
+            return { ...p, value: profitPerUnit * p.quantity };
+          }).sort((a, b) => b.value - a.value)} />
+        )}
+        <SalesDetailList items={salesItems} />
+      </>
+    );
   };
 
-  const handleDownloadExcel = async () => {
-    setExporting(true);
-    try {
-      await saveCsvToDevice();
-    } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not export Excel file.');
-    } finally {
-      setExporting(false);
+  const renderInventoryTab = () => (
+    <InventoryReport
+      topSelling={inventoryData.topSelling}
+      slowMoving={inventoryData.slowMoving}
+      lowStock={inventoryData.lowStock}
+      outOfStock={inventoryData.outOfStock}
+      mostProfitable={inventoryData.mostProfitable}
+    />
+  );
+
+  const renderCustomersTab = () => (
+    <CustomerReport
+      topCustomers={customerReportData.topCustomers}
+      repeatRate={customerReportData.repeatRate}
+      avgSpend={customerReportData.avgSpend}
+      newCustomers={customerReportData.newCustomers}
+      totalCustomers={customerReportData.totalCustomers}
+    />
+  );
+
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case 'sales': return renderSalesTab();
+      case 'profit': return renderProfitTab();
+      case 'inventory': return renderInventoryTab();
+      case 'customers': return renderCustomersTab();
     }
   };
 
   return (
     <View style={styles.screen}>
-      <ScrollView style={styles.root} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header Section */}
-      <View style={styles.headerSection}>
-        <View>
-          <Text style={styles.screenTitle}>Reports</Text>
-          <Text style={styles.screenSubtitle}>Track your business performance</Text>
-        </View>
-      </View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, isMobile && styles.contentMobile]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
+        <ReportsHeader
+          businessName={business?.name ?? ''}
+          dateRangeLabel={getDateRangeLabel(period)}
+          onRefresh={onRefresh}
+          onExport={() => setExportSheetVisible(true)}
+          refreshing={refreshing}
+        />
 
-      {/* Report Type Toggle */}
-      <View style={styles.reportTypeRow}>
-        <TouchableOpacity
-          style={[styles.reportTypeBtn, reportType === 'sales' && styles.reportTypeBtnActive]}
-          onPress={() => setReportType('sales')}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="receipt-outline" size={16} color={reportType === 'sales' ? COLORS.white : COLORS.textSecondary} />
-          <Text style={[styles.reportTypeText, reportType === 'sales' && styles.reportTypeTextActive]}>Sales Report</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.reportTypeBtn, reportType === 'advanced' && styles.reportTypeBtnActive]}
-          onPress={() => setReportType('advanced')}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="bar-chart-outline" size={16} color={reportType === 'advanced' ? COLORS.white : COLORS.textSecondary} />
-          <Text style={[styles.reportTypeText, reportType === 'advanced' && styles.reportTypeTextActive]}>Advanced Report</Text>
-        </TouchableOpacity>
-      </View>
+        <ReportTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        <PeriodSelector period={period} onPeriodChange={setPeriod} />
+        <QuickStats stats={quickStatsData} />
 
-      {/* Controls Section */}
-      <View style={[styles.topRow, isMobile && styles.topRowMobile]}>
-        <View style={styles.periodRow}>
-          {([
-            { key: 'day' as const, label: 'Day' },
-            { key: 'week' as const, label: 'Week' },
-            { key: 'month' as const, label: 'Month' },
-          ] as const).map((p) => (
-            <TouchableOpacity
-              key={p.key}
-              style={[styles.periodBtn, period === p.key && styles.periodBtnActive]}
-              onPress={() => setPeriod(p.key)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.periodText, period === p.key && styles.periodTextActive]}>{p.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {insights.length > 0 && <InsightsCard insights={insights} />}
 
-        <View style={styles.exportBtnsRow}>
-          <TouchableOpacity
-            style={[styles.exportBtn, exporting && { opacity: 0.6 }]}
-            onPress={handlePrintReport}
-            disabled={exporting}
-            activeOpacity={0.85}
-          >
-            {exporting ? (
-              <ActivityIndicator color={COLORS.white} size="small" />
-            ) : (
-              <>
-                <Ionicons name="print-outline" size={16} color={COLORS.white} />
-                <Text style={styles.exportBtnText}>Print</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.excelBtn, exporting && { opacity: 0.6 }]}
-            onPress={handleDownloadExcel}
-            disabled={exporting}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="document-outline" size={16} color={COLORS.success} />
-            <Text style={styles.excelBtnText}>Excel</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.shareBtn, exporting && { opacity: 0.6 }]}
-            onPress={handleSharePdf}
-            disabled={exporting}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="share-social-outline" size={16} color={COLORS.primary} />
-            <Text style={styles.shareBtnText}>Share</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {
-        <>
-          {reportType === 'sales' ? (
-            <>
-              {/* Sales Report */}
-              <View style={styles.summaryGrid}>
-                <View style={[styles.summaryCard, { backgroundColor: COLORS.success + '15', borderColor: COLORS.success + '40' }]}>
-                  <View style={[styles.summaryIconBg, { backgroundColor: COLORS.success + '20' }]}>
-                    <Ionicons name="cash-outline" size={20} color={COLORS.success} />
-                  </View>
-                  <Text style={styles.summaryLabel}>Total Revenue</Text>
-                  <Text style={styles.summaryValue} numberOfLines={1}>TZS {reportMetrics.totalRevenue.toLocaleString()}</Text>
-                </View>
-                <View style={[styles.summaryCard, { backgroundColor: COLORS.info + '15', borderColor: COLORS.info + '40' }]}>
-                  <View style={[styles.summaryIconBg, { backgroundColor: COLORS.info + '20' }]}>
-                    <Ionicons name="cube-outline" size={20} color={COLORS.info} />
-                  </View>
-                  <Text style={styles.summaryLabel}>Items Sold</Text>
-                  <Text style={styles.summaryValue}>{reportMetrics.totalItemsSold}</Text>
-                </View>
-                <View style={[styles.summaryCard, { backgroundColor: COLORS.accent + '15', borderColor: COLORS.accent + '40' }]}>
-                  <View style={[styles.summaryIconBg, { backgroundColor: COLORS.accent + '20' }]}>
-                    <Ionicons name="trending-up-outline" size={20} color={COLORS.accent} />
-                  </View>
-                  <Text style={styles.summaryLabel}>NET PROFIT</Text>
-                  <Text style={[styles.summaryValue, { color: COLORS.accent }]}>{reportMetrics.totalTransactions > 0 ? `TZS ${reportMetrics.netProfit.toLocaleString()}` : '—'}</Text>
-                </View>
-              </View>
-
-              {/* Sales Details Table */}
-              <View style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Ionicons name="receipt-outline" size={18} color={COLORS.info} />
-                  <Text style={styles.cardTitle}>Sales Details</Text>
-                </View>
-                {salesItems.length === 0 ? (
-                  <View style={styles.emptyStateContainer}>
-                    <Ionicons name="cube-outline" size={32} color={COLORS.textMuted} />
-                    <Text style={styles.emptyText}>No sales transactions in this period</Text>
-                  </View>
-                ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableScroll}>
-                    <View style={{ minWidth: isMobile ? 800 : 0, flex: 1 }}>
-                      <View style={[styles.tableHeaderRow, styles.salesHeaderRow]}>
-                        <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Product</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1.2, textAlign: 'right' }]}>Cost</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1.2, textAlign: 'right' }]}>Selling</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1.5 }]}>Cashier</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 0.9, textAlign: 'center' }]}>Qty</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1.3, textAlign: 'right' }]}>Total</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1.3, textAlign: 'right' }]}>Profit</Text>
-                      </View>
-                      {salesItems.map((item, idx) => {
-                        const itemProfit = (item.selling_price - item.cost_price) * item.quantity;
-                        return (
-                          <View key={item.id} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
-                            <Text style={[styles.tableCell, { flex: 2 }]} numberOfLines={1}>{item.product_name}</Text>
-                            <Text style={[styles.tableCell, { flex: 1.2, textAlign: 'right' }]}>TZS {item.cost_price.toLocaleString()}</Text>
-                            <Text style={[styles.tableCell, { flex: 1.2, textAlign: 'right' }]}>TZS {item.selling_price.toLocaleString()}</Text>
-                            <Text style={[styles.tableCell, { flex: 1.5 }]} numberOfLines={1}>{item.cashier_name}</Text>
-                            <Text style={[styles.tableCell, { flex: 0.9, textAlign: 'center', fontWeight: '600' }]}>{item.quantity}</Text>
-                            <Text style={[styles.tableCell, { flex: 1.3, textAlign: 'right', fontWeight: '600', color: COLORS.success }]}>TZS {item.total.toLocaleString()}</Text>
-                            <Text style={[styles.tableCell, { flex: 1.3, textAlign: 'right', fontWeight: '600', color: COLORS.accent }]}>TZS {itemProfit.toLocaleString()}</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </ScrollView>
-                )}
-              </View>
-
-              {/* Net Profit Summary */}
-              {salesItems.length > 0 && (
-                <View style={[styles.profitSummaryCard, { borderColor: COLORS.accent + '40', backgroundColor: COLORS.accent + '08' }]}>
-                  <View style={styles.profitSummaryRow}>
-                    <View style={styles.profitSummaryItem}>
-                      <Text style={styles.profitSummaryLabel}>Total Revenue</Text>
-                      <Text style={[styles.profitSummaryValue, { color: COLORS.success }]}>
-                        TZS {reportMetrics.totalRevenue.toLocaleString()}
-                      </Text>
-                    </View>
-                    <View style={styles.profitSummaryDivider} />
-                    <View style={styles.profitSummaryItem}>
-                      <Text style={styles.profitSummaryLabel}>Total Cost</Text>
-                      <Text style={styles.profitSummaryValue}>
-                        TZS {reportMetrics.totalCost.toLocaleString()}
-                      </Text>
-                    </View>
-                    <View style={styles.profitSummaryDivider} />
-                    <View style={styles.profitSummaryItem}>
-                      <Text style={[styles.profitSummaryLabel, { fontWeight: '800', color: COLORS.accent }]}>NET PROFIT</Text>
-                      <Text style={[styles.profitSummaryValue, { color: COLORS.accent, fontSize: FONTS.sizes.lg }]}>
-                        TZS {reportMetrics.netProfit.toLocaleString()}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              )}
-            </>
-          ) : (
-            <>
-              {/* Advanced Report */}
-              <View style={styles.summaryGrid}>
-                <View style={[styles.summaryCard, { backgroundColor: COLORS.success + '15', borderColor: COLORS.success + '40' }]}>
-                  <View style={[styles.summaryIconBg, { backgroundColor: COLORS.success + '20' }]}>
-                    <Ionicons name="cash-outline" size={20} color={COLORS.success} />
-                  </View>
-                  <Text style={styles.summaryLabel}>Revenue</Text>
-                  <Text style={styles.summaryValue} numberOfLines={1}>TZS {reportMetrics.totalRevenue.toLocaleString()}</Text>
-                </View>
-                <View style={[styles.summaryCard, { backgroundColor: COLORS.accent + '15', borderColor: COLORS.accent + '40' }]}>
-                  <View style={[styles.summaryIconBg, { backgroundColor: COLORS.accent + '20' }]}>
-                    <Ionicons name="trending-up-outline" size={20} color={COLORS.accent} />
-                  </View>
-                  <Text style={styles.summaryLabel}>Net Profit</Text>
-                  <Text style={[styles.summaryValue, { color: COLORS.accent }]}>TZS {reportMetrics.netProfit.toLocaleString()}</Text>
-                </View>
-                <View style={[styles.summaryCard, { backgroundColor: COLORS.info + '15', borderColor: COLORS.info + '40' }]}>
-                  <View style={[styles.summaryIconBg, { backgroundColor: COLORS.info + '20' }]}>
-                    <Ionicons name="card-outline" size={20} color={COLORS.info} />
-                  </View>
-                  <Text style={styles.summaryLabel}>Transactions</Text>
-                  <Text style={styles.summaryValue}>{payments.length}</Text>
-                </View>
-              </View>
-
-              {/* Payment Transactions */}
-              <View style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Ionicons name="card-outline" size={18} color={COLORS.accent} />
-                  <Text style={styles.cardTitle}>Payment Transactions</Text>
-                </View>
-                {payments.length === 0 ? (
-                  <View style={styles.emptyStateContainer}>
-                    <Ionicons name="card-outline" size={32} color={COLORS.textMuted} />
-                    <Text style={styles.emptyText}>No payment transactions found</Text>
-                  </View>
-                ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableScroll}>
-                    <View style={{ minWidth: isMobile ? 620 : 0, flex: 1 }}>
-                      <View style={[styles.tableHeaderRow, styles.paymentHeaderRow]}>
-                        <Text style={[styles.tableHeaderCell, { flex: 0.9 }]}>Type</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1.2, textAlign: 'right' }]}>Amount</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1 }]}>Phone</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 0.8 }]}>Status</Text>
-                        <Text style={[styles.tableHeaderCell, { flex: 1.1 }]}>Date</Text>
-                      </View>
-                      {payments.map((p, idx) => (
-                        <View key={p.id} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
-                          <Text style={[styles.tableCell, { flex: 0.9 }]} numberOfLines={1}>{p.payment_type}</Text>
-                          <Text style={[styles.tableCell, { flex: 1.2, textAlign: 'right', fontWeight: '600', color: COLORS.success }]}>TZS {Number(p.amount).toLocaleString()}</Text>
-                          <Text style={[styles.tableCell, { flex: 1 }]} numberOfLines={1}>{p.payer_phone ?? '—'}</Text>
-                          <View style={{ flex: 0.8, alignItems: 'flex-start' }}>
-                            <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[p.status] ?? COLORS.textMuted }]}>
-                              <Text style={styles.statusBadgeText}>{p.status}</Text>
-                            </View>
-                          </View>
-                          <Text style={[styles.tableCell, { flex: 1.1 }]}>{format(new Date(p.initiated_at), 'dd MMM')}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </ScrollView>
-                )}
-              </View>
-            </>
-          )}
-        </>
-      }
+        {renderActiveTab()}
       </ScrollView>
 
-      {loading && (
+      {loading && !refreshing && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator color={COLORS.primary} size="large" />
         </View>
       )}
+
+      <ExportSheet
+        visible={exportSheetVisible}
+        onClose={() => setExportSheetVisible(false)}
+        onPrint={handlePrint}
+        onExcel={handleExcel}
+        onSharePdf={handleSharePdf}
+        exporting={exporting}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: COLORS.background },
-  root: { flex: 1, backgroundColor: COLORS.background },
-  container: { padding: SPACING.base, gap: SPACING.lg },
-
-  /* Header Section */
-  headerSection: { marginBottom: SPACING.sm },
-  screenTitle: { fontSize: FONTS.sizes.xl, fontWeight: '800', color: COLORS.text, letterSpacing: -0.3 },
-  screenSubtitle: { fontSize: FONTS.sizes.sm, color: COLORS.textMuted, marginTop: 4 },
-
-  /* Report Type Toggle */
-  reportTypeRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.md, backgroundColor: COLORS.surface, padding: 4, borderRadius: RADIUS.lg },
-  reportTypeBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.xs,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    backgroundColor: 'transparent',
+  scroll: { flex: 1 },
+  content: {
+    padding: SPACING.base,
+    gap: SPACING.md,
+    paddingBottom: SPACING['3xl'],
   },
-  reportTypeBtnActive: { backgroundColor: COLORS.primary },
-  reportTypeText: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, fontWeight: '600' },
-  reportTypeTextActive: { color: COLORS.white, fontWeight: '700' },
-
-  /* Loading State */
+  contentMobile: {
+    paddingHorizontal: SPACING.md,
+  },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(17, 24, 39, 0.24)',
+    backgroundColor: 'transparent',
     zIndex: 20,
     elevation: 20,
   },
-
-  /* Controls */
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: SPACING.md },
-  topRowMobile: { alignItems: 'flex-start', flexDirection: 'column', gap: SPACING.md },
-
-  periodRow: { flexDirection: 'row', gap: SPACING.xs, backgroundColor: COLORS.surface, padding: 4, borderRadius: RADIUS.full },
-  periodBtn: {
-    borderRadius: RADIUS.full,
-    backgroundColor: 'transparent',
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 1,
-  },
-  periodBtnActive: { backgroundColor: COLORS.primary },
-  periodText: { color: COLORS.textSecondary, fontSize: FONTS.sizes.xs, fontWeight: '600' },
-  periodTextActive: { color: COLORS.white, fontWeight: '700' },
-
-  exportBtnsRow: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'center' },
-  exportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.xs,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-  },
-  exportBtnText: { color: COLORS.white, fontSize: FONTS.sizes.xs, fontWeight: '700' },
-  shareBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.xs,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1.5,
-    borderColor: COLORS.primary + '40',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-  },
-  shareBtnText: { color: COLORS.primary, fontSize: FONTS.sizes.xs, fontWeight: '700' },
-  excelBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.xs,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.success + '15',
-    borderWidth: 1.5,
-    borderColor: COLORS.success + '40',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 2,
-  },
-  excelBtnText: { color: COLORS.success, fontSize: FONTS.sizes.xs, fontWeight: '700' },
-
-  /* Summary Cards */
-  summaryGrid: { flexDirection: 'row', gap: SPACING.sm, flexWrap: 'wrap' },
-  summaryCard: {
-    flex: 1,
-    minWidth: 140,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.surface,
-    padding: SPACING.md,
-    gap: SPACING.sm,
-    ...SHADOWS.sm,
-  },
-  summaryIconBg: { width: 44, height: 44, borderRadius: RADIUS.md, alignItems: 'center', justifyContent: 'center' },
-  summaryValue: { fontSize: FONTS.sizes.base, fontWeight: '800', color: COLORS.text, letterSpacing: -0.2 },
-  summaryLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
-
-  /* Cards */
-  card: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.surface,
-    padding: SPACING.md,
-    ...SHADOWS.sm,
-  },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, marginBottom: SPACING.md },
-  cardTitle: { fontSize: FONTS.sizes.base, fontWeight: '700', color: COLORS.text, flex: 1 },
-
-  /* Table Styles */
-  tableScroll: { marginHorizontal: -SPACING.md },
-  tableHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    backgroundColor: COLORS.background,
-    borderBottomWidth: 1.5,
-    borderBottomColor: COLORS.border,
-    gap: SPACING.xs,
-  },
-  salesHeaderRow: { paddingHorizontal: SPACING.md },
-  paymentHeaderRow: { paddingHorizontal: SPACING.md },
-  tableHeaderCell: { fontSize: FONTS.sizes.xs, fontWeight: '700', color: COLORS.text, textTransform: 'uppercase', letterSpacing: 0.5 },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.sm + 2,
-    paddingHorizontal: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border + '40',
-    gap: SPACING.xs,
-  },
-  tableRowAlt: { backgroundColor: COLORS.background + '50' },
-  tableCell: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
-
-  /* Empty State */
-  emptyStateContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING.xl, gap: SPACING.sm },
-  emptyText: { color: COLORS.textMuted, textAlign: 'center', fontSize: FONTS.sizes.sm, fontWeight: '500' },
-
-  /* Net Profit Summary */
-  profitSummaryCard: {
-    borderWidth: 1.5,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    ...SHADOWS.sm,
-  },
-  profitSummaryRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
-  profitSummaryItem: { flex: 1, alignItems: 'center' },
-  profitSummaryDivider: { width: 1, height: 40, backgroundColor: COLORS.border, marginHorizontal: SPACING.sm },
-  profitSummaryLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
-  profitSummaryValue: { fontSize: FONTS.sizes.base, fontWeight: '800', color: COLORS.text, marginTop: SPACING.xs },
-
-  /* Status Badge */
-  statusBadge: {
-    borderRadius: RADIUS.full,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  statusBadgeText: { fontSize: 10, fontWeight: '700', color: COLORS.white, textTransform: 'capitalize' },
 });

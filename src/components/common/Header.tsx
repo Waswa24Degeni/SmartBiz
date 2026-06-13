@@ -11,8 +11,6 @@ interface HeaderProps {
   onBack?: () => void;
   onMenuPress?: () => void;
   rightActions?: React.ReactNode;
-  showSearch?: boolean;
-  onSearch?: () => void;
   onNotificationsPress?: () => void;
   onActivityPress?: () => void;
   notificationsBadge?: number;
@@ -26,8 +24,6 @@ export function Header({
   onBack,
   onMenuPress,
   rightActions,
-  showSearch,
-  onSearch,
   onNotificationsPress,
   onActivityPress,
   notificationsBadge = 0,
@@ -79,11 +75,7 @@ export function Header({
 
         {/* Right actions */}
         <View style={styles.right}>
-          {showSearch && (
-            <TouchableOpacity style={styles.iconBtn} onPress={onSearch}>
-              <Text style={[styles.searchPlaceholder, isMobile && styles.searchPlaceholderMobile]}>Search ...</Text>
-            </TouchableOpacity>
-          )}
+
           {rightActions}
           <TouchableOpacity style={styles.iconBtn} onPress={onNotificationsPress} disabled={!onNotificationsPress}>
             <Ionicons name="notifications-outline" size={20} color={COLORS.text} />

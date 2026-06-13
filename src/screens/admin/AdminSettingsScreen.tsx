@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
       ...StyleSheet.absoluteFillObject,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'rgba(17, 24, 39, 0.24)',
+      backgroundColor: 'transparent',
       zIndex: 20,
       elevation: 20,
     },

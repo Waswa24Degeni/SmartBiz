@@ -191,16 +191,7 @@ export function MainLayout() {
   }, [route, hasAccess, allowedNavItems]);
 
   const getBreadcrumbs = () => {
-    if (route === 'Dashboard') return ['Dashboard', 'Sales statistics'];
-    if (route === 'Inventory' && selectedCategory) return ['Inventory', 'Products', selectedCategory.name];
-    if (route === 'Inventory') return ['Inventory', 'Products'];
-    if (route === 'POS') return ['POS', 'Checkout'];
-    if (route === 'Reports') return ['Reports', 'Sales analytics'];
-    if (route === 'Bills') return ['Bills', 'Payment history'];
-    if (route === 'Customers') return ['Customers', 'Customer directory'];
-    if (route === 'Wallet') return ['Wallet', 'Collections & withdrawals'];
-    if (route === 'Settings') return ['Settings'];
-    return [route];
+    return [];
   };
 
   const handleBack = () => {
@@ -324,7 +315,6 @@ export function MainLayout() {
               <Text style={styles.desktopCollapseText}>{sidebarCollapsed ? 'Expand' : 'Collapse'}</Text>
             </TouchableOpacity>
           ) : undefined}
-          showSearch={route === 'Inventory' || route === 'POS'}
         />
         <View style={styles.content}>
           {renderContent()}

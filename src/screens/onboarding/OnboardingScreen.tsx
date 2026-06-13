@@ -61,10 +61,10 @@ function isValidBusinessName(raw: string): boolean {
 type Step = 'profile' | 'category' | 'currency' | 'plan' | 'payment';
 
 export function OnboardingScreen() {
-  const { user, refreshUser } = useAuth();
+  const { user, session, refreshUser, signOut } = useAuth();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('profile');
-  const [businessName, setBusinessName] = useState('');
+  const [businessName, setBusinessName] = useState(session?.user?.user_metadata?.business_name || '');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [category, setCategory] = useState('');
@@ -256,8 +256,8 @@ export function OnboardingScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Progress */}
       <View style={styles.progressWrap}>
-        <TouchableOpacity onPress={() => stepIndex > 0 && setStep(STEPS[stepIndex - 1])}>
-          {stepIndex > 0 ? <Ionicons name="arrow-back" size={24} color={COLORS.text} /> : <View style={{ width: 24 }} />}
+        <TouchableOpacity onPress={() => stepIndex > 0 ? setStep(STEPS[stepIndex - 1]) : signOut()}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <View style={styles.steps}>
           {STEPS.map((s, i) => (

@@ -188,6 +188,7 @@ export function RegisterScreen({ navigation }: Props) {
         email.trim().toLowerCase(),
         password,
         cleanFullName,
+        { business_name: cleanBusinessName }
       );
 
       if (signUpError) {
@@ -324,6 +325,7 @@ export function RegisterScreen({ navigation }: Props) {
         email.trim().toLowerCase(),
         password,
         cleanFullName,
+        { business_name: cleanBusinessName }
       );
 
       if (signUpError && !signUpError.includes('confirmation') && !signUpError.includes('verify')) {
@@ -437,6 +439,11 @@ export function RegisterScreen({ navigation }: Props) {
 
   const renderHeader = () => (
     <View style={styles.header}>
+      {step === 'account' && (
+        <TouchableOpacity style={styles.headerBackBtn} onPress={() => navigation.navigate('Login')}>
+          <Ionicons name="arrow-back" size={28} color={COLORS.white} />
+        </TouchableOpacity>
+      )}
       <View style={styles.logoIcon}>
         <Text style={styles.logoText}>SB</Text>
       </View>
@@ -734,7 +741,8 @@ const styles = StyleSheet.create({
   inner: { width: '100%', maxWidth: 480 },
 
   // Header
-  header: { alignItems: 'center', marginBottom: SPACING.lg },
+  header: { alignItems: 'center', marginBottom: SPACING.lg, width: '100%', position: 'relative' },
+  headerBackBtn: { position: 'absolute', left: 0, top: 0, padding: SPACING.xs },
   logoIcon: {
     width: 52,
     height: 52,

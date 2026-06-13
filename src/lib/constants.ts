@@ -1,4 +1,3 @@
-// Design tokens matching the ServePoint/SmartBiz UI design system
 import { Platform } from 'react-native';
 
 export const COLORS = {

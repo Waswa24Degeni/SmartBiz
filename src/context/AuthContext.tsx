@@ -9,12 +9,14 @@ interface AuthContextValue {
   user: User | null;
   business: Business | null;
   subscription: Subscription | null;
+  businesses: Business[];
   loading: boolean;
   profileLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string, metadata?: Record<string, any>) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  switchBusiness: (businessId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -23,6 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [business, setBusiness] = useState<Business | null>(null);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
   // Tracks whether an in-flight profile fetch is happening after signIn
@@ -48,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
     setUser(null);
     setBusiness(null);
+    setBusinesses([]);
     setSubscription(null);
     setProfileLoading(false);
     setLoading(false);
@@ -79,6 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(null);
         setUser(null);
         setBusiness(null);
+        setBusinesses([]);
         setSubscription(null);
         setProfileLoading(false);
         setLoading(false);
@@ -92,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUser(null);
         setBusiness(null);
+        setBusinesses([]);
         setSubscription(null);
         setProfileLoading(false);
         setLoading(false);
@@ -222,45 +228,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // resolvedProfile is guaranteed non-null here (guarded above by `if (!resolvedProfile) return`)
       const p = resolvedProfile!;
       if (p.role !== 'admin') {
-        // Primary: query by owner_id = supabaseUser.id (the real auth UID).
-        // This is always correct and matches the businesses RLS (`owner_id = auth.uid()`).
-        // It also works when users.business_id is null or stale.
-        const { data: bizByOwner, error: bizErr } = await supabase
-          .from('businesses')
-          .select('*')
-          .eq('owner_id', supabaseUser.id)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (bizErr) {
-          console.error('[AuthContext] business fetch error:', bizErr.message, bizErr.code);
-        }
-
         let resolvedBiz: Record<string, any> | null = null;
-        const ownerBusiness = Array.isArray(bizByOwner) ? bizByOwner[0] : null;
-        if (ownerBusiness) {
-          setBusiness(ownerBusiness as Business);
-          resolvedBiz = ownerBusiness;
-          // Patch users.business_id if it's missing or out of sync
-          if (!p.business_id || p.business_id !== ownerBusiness.id) {
-            supabase.from('users')
-              .update({ business_id: ownerBusiness.id })
-              .eq('id', supabaseUser.id)
-              .then(() => {});
-          }
-        } else if (p.business_id) {
-          // Fallback: try the stored business_id pointer
-          const { data: bizById, error: bizByIdErr } = await supabase
+        
+        if (p.role === 'owner') {
+          // Owners can have multiple businesses
+          const { data: allBiz, error: allBizErr } = await supabase
             .from('businesses')
             .select('*')
-            .eq('id', p.business_id)
-            .maybeSingle();
-          if (bizByIdErr) {
-            console.error('[AuthContext] business fallback fetch error:', bizByIdErr.message, bizByIdErr.code);
+            .eq('owner_id', supabaseUser.id)
+            .order('created_at', { ascending: false });
+
+          if (allBizErr) {
+            console.error('[AuthContext] business fetch error:', allBizErr.message, allBizErr.code);
           }
-          if (bizById) { setBusiness(bizById as Business); resolvedBiz = bizById; }
+
+          const ownerBusinesses = (allBiz as Business[]) || [];
+          setBusinesses(ownerBusinesses);
+
+          if (ownerBusinesses.length > 0) {
+            resolvedBiz = ownerBusinesses.find(b => b.id === p.business_id) || ownerBusinesses[0];
+            setBusiness(resolvedBiz as Business);
+            
+            // Patch users.business_id if it's missing or out of sync
+            if (!p.business_id || p.business_id !== resolvedBiz.id) {
+              supabase.from('users')
+                .update({ business_id: resolvedBiz.id })
+                .eq('id', supabaseUser.id)
+                .then(() => {});
+            }
+          }
         } else {
-          console.warn('[AuthContext] No business found for owner. supabaseUser.id=', supabaseUser.id, 'profile.business_id=', p.business_id);
+          // Staff only have one assigned business
+          setBusinesses([]);
+          if (p.business_id) {
+            const { data: bizById, error: bizByIdErr } = await supabase
+              .from('businesses')
+              .select('*')
+              .eq('id', p.business_id)
+              .maybeSingle();
+            if (bizByIdErr) {
+              console.error('[AuthContext] business fallback fetch error:', bizByIdErr.message, bizByIdErr.code);
+            }
+            if (bizById) { setBusiness(bizById as Business); resolvedBiz = bizById; }
+          } else {
+            console.warn('[AuthContext] No business found for staff. profile.business_id=', p.business_id);
+          }
         }
 
         // ── Step 4: load subscription (gates dashboard access) ────────────────
@@ -334,8 +346,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (session?.user) await fetchUserProfile(session.user);
   };
 
+  const switchBusiness = async (businessId: string) => {
+    if (!user) return;
+    setLoading(true);
+    const { error } = await supabase
+      .from('users')
+      .update({ business_id: businessId })
+      .eq('id', user.id);
+    
+    if (error) {
+      console.error('switchBusiness error:', error);
+      Alert.alert('Error', 'Failed to switch shop.');
+      setLoading(false);
+      return;
+    }
+    
+    await refreshUser();
+  };
+
   return (
-    <AuthContext.Provider value={{ session, user, business, subscription, loading, profileLoading, signIn, signUp, signOut, refreshUser }}>
+    <AuthContext.Provider value={{ session, user, business, businesses, subscription, loading, profileLoading, signIn, signUp, signOut, refreshUser, switchBusiness }}>
       {children}
     </AuthContext.Provider>
   );

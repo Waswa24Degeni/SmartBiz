@@ -58,6 +58,7 @@ export function MessagesScreen() {
       .from('notifications')
       .select('id, title, body, type, is_read, created_at')
       .eq('user_id', user.id)
+      .eq('type', 'message')
       .order('created_at', { ascending: false })
       .limit(200);
 
@@ -151,7 +152,7 @@ export function MessagesScreen() {
       user_id: recipientId,
       title: composeTitle.trim(),
       body: `From ${user.full_name || 'Teammate'}: ${composeBody.trim()}`,
-      type: 'system' as const,
+      type: 'message' as const,
       is_read: false,
     }));
 

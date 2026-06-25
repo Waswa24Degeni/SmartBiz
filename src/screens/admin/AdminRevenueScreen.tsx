@@ -47,15 +47,11 @@ const SECTION_TABS: SectionTab[] = ['Subscriptions', 'By Business'];
 const PAYMENT_LABELS: Record<string, string> = {
   cash: 'Cash',
   mobile_money: 'Mobile Money',
-  bank_card: 'Card',
-  credit: 'Credit',
 };
 
 const PAYMENT_COLORS: Record<string, string> = {
   cash: COLORS.success,
   mobile_money: COLORS.info,
-  bank_card: COLORS.accent,
-  credit: COLORS.warning,
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -282,7 +278,7 @@ export function AdminRevenueScreen() {
                   <View key={row.id} style={styles.mobileTxCard}>
                     <View style={styles.mobileTxHead}>
                       <Text style={styles.mobileTxTitle}>{row.business_name}</Text>
-                      <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[row.status] ?? COLORS.textMuted) + '22' }]}> 
+                      <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[row.status] ?? COLORS.textMuted) + '22' }]}>
                         <Text style={[styles.statusText, { color: STATUS_COLORS[row.status] ?? COLORS.textMuted }]}>{row.status}</Text>
                       </View>
                     </View>
@@ -308,7 +304,7 @@ export function AdminRevenueScreen() {
                         <Text style={[styles.txCell, { flex: 1, fontWeight: '700', color: COLORS.text }]}>TZS {row.amount.toLocaleString()}</Text>
                         <Text style={[styles.txCell, { flex: 1 }]} numberOfLines={1}>{row.payer_phone ?? '—'}</Text>
                         <View style={{ flex: 0.9, justifyContent: 'center' }}>
-                          <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[row.status] ?? COLORS.textMuted) + '22' }]}> 
+                          <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[row.status] ?? COLORS.textMuted) + '22' }]}>
                             <Text style={[styles.statusText, { color: STATUS_COLORS[row.status] ?? COLORS.textMuted }]}>{row.status}</Text>
                           </View>
                         </View>

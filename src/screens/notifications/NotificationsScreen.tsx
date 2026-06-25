@@ -19,7 +19,7 @@ type NotificationRow = {
   id: string;
   title: string;
   body: string;
-  type: 'low_stock' | 'subscription' | 'sales' | 'system' | 'payment';
+  type: 'low_stock' | 'subscription' | 'sales' | 'system' | 'payment' | 'message';
   is_read: boolean;
   created_at: string;
 };
@@ -30,6 +30,7 @@ const TYPE_META: Record<NotificationRow['type'], { label: string; color: string;
   sales: { label: 'Sales', color: COLORS.success, icon: 'cash-outline' },
   system: { label: 'System', color: COLORS.textMuted, icon: 'settings-outline' },
   payment: { label: 'Payment', color: COLORS.accent, icon: 'card-outline' },
+  message: { label: 'Message', color: COLORS.primary, icon: 'chatbubble-outline' },
 };
 
 export function NotificationsScreen() {
@@ -50,6 +51,7 @@ export function NotificationsScreen() {
       .from('notifications')
       .select('id, title, body, type, is_read, created_at')
       .eq('user_id', user.id)
+      .neq('type', 'message')
       .order('created_at', { ascending: false })
       .limit(200);
 
@@ -114,7 +116,8 @@ export function NotificationsScreen() {
       .from('notifications')
       .update({ is_read: true })
       .eq('user_id', user.id)
-      .eq('is_read', false);
+      .eq('is_read', false)
+      .neq('type', 'message');
 
     if (error) {
       Alert.alert('Error', error.message);

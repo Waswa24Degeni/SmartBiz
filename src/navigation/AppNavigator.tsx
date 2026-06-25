@@ -9,7 +9,7 @@ import type { NativeStackNavigationOptions } from '@react-navigation/native-stac
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { CartProvider } from '../context/CartContext';
 import { SettingsProvider } from '../context/SettingsContext';
-import { supabase } from '../lib/supabase';
+import { supabase, updateLastActivity } from '../lib/supabase';
 import { COLORS, FONTS, SPACING, RADIUS } from '../lib/constants';
 
 // Screens
@@ -168,20 +168,32 @@ function RootNavigator() {
 }
 
 export function AppNavigator() {
+  // Update activity when user touches the screen
+  const handleInteraction = () => {
+    updateLastActivity().catch(() => {});
+  };
+
+  // Update activity when user navigates
+  const handleNavigationChange = () => {
+    updateLastActivity().catch(() => {});
+  };
+
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AuthProvider>
-          <CartProvider>
-            <SettingsProvider>
-              <NavigationContainer>
-                <RootNavigator />
-              </NavigationContainer>
-            </SettingsProvider>
-          </CartProvider>
-        </AuthProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <View style={{ flex: 1 }} onTouchStart={handleInteraction}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <AuthProvider>
+            <CartProvider>
+              <SettingsProvider>
+                <NavigationContainer onStateChange={handleNavigationChange}>
+                  <RootNavigator />
+                </NavigationContainer>
+              </SettingsProvider>
+            </CartProvider>
+          </AuthProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </View>
   );
 }
 

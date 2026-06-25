@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
+  LayoutAnimation,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -21,11 +22,14 @@ import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../lib/supabase';
 import { Sale, Product } from '../../types';
 import { COLORS, SPACING, FONTS, RADIUS, SHADOWS, BREAKPOINTS, WEB_OUTLINE_NONE } from '../../lib/constants';
-import { format } from 'date-fns';
+import { format, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { useRealtimeSubscription } from '../../lib/hooks';
+import { ListSkeleton } from '../../components/common/SkeletonLoader';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import Animated, { FadeIn, FadeInDown, Layout } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const STATUS_COLORS: Record<string, string> = {
   active: COLORS.success,
@@ -60,7 +64,6 @@ const PAYMENT_METHODS = [
   { id: 'mobile_money', label: 'Mobile Money', icon: 'phone-portrait-outline' },
 ] as const;
 
-const STATUSES = ['All', 'active', 'completed', 'cancelled'];
 const MOBILE_MONEY_MIN_AMOUNT = 500;
 
 function normalizeTzPhone(raw: string): string {
@@ -95,11 +98,19 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
+  const [filterDate, setFilterDate] = useState('All');
+  const [filterPayment, setFilterPayment] = useState('All');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [acting, setActing] = useState(false);
   const [docBusy, setDocBusy] = useState(false);
+
+  // New layout and menu states
+  const [viewMode, setViewMode] = useState<'list' | 'card' | 'kanban'>('card');
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [dateOpen, setDateOpen] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [newOrderVisible, setNewOrderVisible] = useState(false);
@@ -143,7 +154,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
       `)
       .eq('business_id', business.id)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(300);
 
     if (error) {
       console.error('[BillsScreen] sales fetch error:', error.message);
@@ -169,13 +180,16 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
   const fetchProducts = useCallback(async () => {
     if (!business?.id) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('products')
       .select('id, name, selling_price, stock_quantity, unit')
       .eq('business_id', business.id)
       .eq('is_active', true)
       .order('name');
 
+    if (error) {
+      console.error('[BillsScreen] fetchProducts error:', error.message);
+    }
     setProducts((data as Product[]) ?? []);
   }, [business?.id]);
 
@@ -252,10 +266,20 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
     fetchProducts();
   }, [fetchSales, fetchProducts, reconcilePaidSales, ordersLoaded]);
 
+  useEffect(() => {
+    if (selectedSale) {
+      const updated = sales.find((s) => s.id === selectedSale.id);
+      if (updated && updated !== selectedSale) {
+        setSelectedSale(updated);
+      }
+    }
+  }, [sales, selectedSale]);
+
   useRealtimeSubscription('bills-sales', 'sales', () => fetchSales(true), !!business?.id && ordersLoaded);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const now = new Date();
     return sales.filter((sale) => {
       const matchSearch =
         !q
@@ -264,9 +288,23 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
         || (sale.table_number ?? '').toLowerCase().includes(q);
 
       const matchStatus = filterStatus === 'All' || sale.status === filterStatus;
-      return matchSearch && matchStatus;
+      const matchPayment = filterPayment === 'All' || sale.payment_method === filterPayment;
+
+      let matchDate = true;
+      if (filterDate !== 'All') {
+          const sDate = new Date(sale.created_at);
+          if (filterDate === 'Today') {
+              matchDate = sDate >= startOfDay(now);
+          } else if (filterDate === 'Week') {
+              matchDate = sDate >= startOfWeek(now);
+          } else if (filterDate === 'Month') {
+              matchDate = sDate >= startOfMonth(now);
+          }
+      }
+
+      return matchSearch && matchStatus && matchPayment && matchDate;
     });
-  }, [sales, search, filterStatus]);
+  }, [sales, search, filterStatus, filterPayment, filterDate]);
 
   const totalRevenue = useMemo(
     () => sales.filter((sale) => sale.status === 'completed').reduce((sum, sale) => sum + Number(sale.total), 0),
@@ -280,9 +318,30 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
     [sales],
   );
 
+  const todaySales = useMemo(() => {
+    const today = startOfDay(new Date());
+    return sales.filter((s) => new Date(s.created_at) >= today);
+  }, [sales]);
+
+  const todayRevenue = useMemo(() => {
+    return todaySales
+      .filter((s) => s.status === 'completed')
+      .reduce((sum, s) => sum + Number(s.total || s.subtotal || 0), 0);
+  }, [todaySales]);
+
+  const completedToday = useMemo(() => {
+    return todaySales.filter((s) => s.status === 'completed').length;
+  }, [todaySales]);
+
+  const statsPendingOrders = useMemo(() => {
+    return sales.filter((s) => s.status === 'active' && s.payment_status === 'pending').length;
+  }, [sales]);
+
   const handleSelectSale = (sale: Sale) => {
     setSelectedSale(sale);
-    if (isMobile) setDetailVisible(true);
+    if (isMobile || viewMode === 'kanban') {
+      setDetailVisible(true);
+    }
   };
 
   const openCharge = (sale: Sale) => {
@@ -307,7 +366,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
 
       try {
         console.log(`[Payment Poll] Calling verify-payment (attempt ${attempts}/${maxAttempts})...`);
-        
+
         const { data, error } = await supabase.functions.invoke('verify-payment', {
           body: { payment_id: paymentId },
         });
@@ -453,7 +512,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
         // ── Auto-verify payment completion (poll for up to 5 minutes) ──
         if (paymentId) {
           console.log(`[BillsScreen] Starting payment verification for order ${chargeSale.id} (payment_id: ${paymentId})`);
-          
+
           // Run polling in background without blocking UI
           (async () => {
             const finalStatus = await pollPaymentStatus(paymentId);
@@ -565,6 +624,44 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
     })();
   };
 
+  const handleRefund = (sale: Sale) => {
+    Alert.alert(
+      'Process Refund',
+      `Are you sure you want to refund order #${sale.order_number}?\n\nThis will mark the order as refunded.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Refund',
+          style: 'destructive',
+          onPress: async () => {
+            setActing(true);
+            try {
+              const { error } = await supabase
+                .from('sales')
+                .update({ status: 'refunded', updated_at: new Date().toISOString() })
+                .eq('id', sale.id);
+
+              if (error) {
+                Alert.alert('Error', error.message);
+                return;
+              }
+
+              await fetchSales(true);
+              if (selectedSale?.id === sale.id) {
+                setDetailVisible(false);
+              }
+              Alert.alert('Order Refunded', `${sale.order_number} has been refunded.`);
+            } catch (e: any) {
+              Alert.alert('Error', e?.message ?? 'Unexpected error');
+            } finally {
+              setActing(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleClearOrder = (sale: Sale) => {
     setActing(true);
     (async () => {
@@ -659,42 +756,58 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
 
   const openAddItems = (sale: Sale) => {
     setSelectedSale(sale);
-    setItemQty({});
+    const existingQtys: Record<string, number> = {};
+    if ((sale as any).items) {
+      (sale as any).items.forEach((item: any) => {
+        existingQtys[item.product_id] = (existingQtys[item.product_id] || 0) + item.quantity;
+      });
+    }
+    setItemQty(existingQtys);
     setItemSearch('');
+    fetchProducts();
     setAddItemVisible(true);
   };
 
   const handleSaveItems = async () => {
     if (!selectedSale) return;
 
-    const entries = Object.entries(itemQty).filter(([, qty]) => qty > 0);
-    if (entries.length === 0) {
-      setAddItemVisible(false);
-      return;
-    }
-
     setSavingItems(true);
 
-    const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
-    const rows = entries.map(([productId, qty]) => ({
-      sale_id: selectedSale.id,
-      product_id: productId,
-      quantity: qty,
-      unit_price: productMap[productId]?.selling_price ?? 0,
-      discount: 0,
-      total: qty * (productMap[productId]?.selling_price ?? 0),
-    }));
-
-    const { error: insertErr } = await supabase.from('sale_items').insert(rows);
-    if (insertErr) {
-      Alert.alert('Error', insertErr.message);
+    const { error: deleteErr } = await supabase.from('sale_items').delete().eq('sale_id', selectedSale.id);
+    if (deleteErr) {
+      Alert.alert('Error', deleteErr.message);
       setSavingItems(false);
       return;
     }
 
-    const added = rows.reduce((sum, row) => sum + row.total, 0);
-    const newSubtotal = Number(selectedSale.subtotal) + added;
-    const newTotal = newSubtotal - Number(selectedSale.discount);
+    const entries = Object.entries(itemQty).filter(([, qty]) => qty > 0);
+
+    let newSubtotal = 0;
+
+    if (entries.length > 0) {
+      const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
+      const rows = entries.map(([productId, qty]) => {
+        const total = qty * (productMap[productId]?.selling_price ?? 0);
+        newSubtotal += total;
+        return {
+          sale_id: selectedSale.id,
+          product_id: productId,
+          quantity: qty,
+          unit_price: productMap[productId]?.selling_price ?? 0,
+          discount: 0,
+          total: total,
+        };
+      });
+
+      const { error: insertErr } = await supabase.from('sale_items').insert(rows);
+      if (insertErr) {
+        Alert.alert('Error', insertErr.message);
+        setSavingItems(false);
+        return;
+      }
+    }
+
+    const newTotal = Math.max(0, newSubtotal - Number(selectedSale.discount));
 
     const { error: updateErr } = await supabase
       .from('sales')
@@ -1236,14 +1349,25 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
             </View>
 
             {sale.status === 'completed' && sale.payment_status === 'paid' && (
-              <TouchableOpacity
-                style={[styles.receiptBtn, docBusy && { opacity: 0.7 }]}
-                onPress={() => handleGenerateReceipt(sale)}
-                disabled={docBusy}
-              >
-                <Ionicons name="receipt-outline" size={15} color={COLORS.white} />
-                <Text style={styles.receiptBtnText}>Generate Receipt</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={[styles.receiptBtn, docBusy && { opacity: 0.7 }]}
+                  onPress={() => handleGenerateReceipt(sale)}
+                  disabled={docBusy}
+                >
+                  <Ionicons name="receipt-outline" size={15} color={COLORS.white} />
+                  <Text style={styles.receiptBtnText}>Generate Receipt</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.cancelBtn, isCompact && styles.cancelBtnCompact, acting && { opacity: 0.6 }, { marginTop: SPACING.md }]}
+                  onPress={() => handleRefund(sale)}
+                  disabled={acting}
+                >
+                  <Ionicons name="refresh-circle-outline" size={16} color={COLORS.error} />
+                  <Text style={styles.cancelBtnText}>Process Refund</Text>
+                </TouchableOpacity>
+              </>
             )}
           </>
         )}
@@ -1254,124 +1378,482 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
   const filteredProducts = products.filter((p) => {
     const q = itemSearch.toLowerCase();
     return !q || p.name.toLowerCase().includes(q);
+  }).sort((a, b) => {
+    const qtyA = itemQty[a.id] || 0;
+    const qtyB = itemQty[b.id] || 0;
+    if (qtyA > 0 && qtyB === 0) return -1;
+    if (qtyB > 0 && qtyA === 0) return 1;
+    return a.name.localeCompare(b.name);
   });
 
-  const statusCount = (status: string) => (
-    status === 'All' ? sales.length : sales.filter((s) => s.status === status).length
-  );
+  const renderCompactRow = (item: Sale) => {
+    const isSelected = selectedSale?.id === item.id;
+    const paymentColor = PAYMENT_COLORS[item.payment_status ?? 'pending'] ?? COLORS.textMuted;
+
+    return (
+      <Animated.View entering={FadeInDown.duration(200)} layout={Layout.springify()}>
+        <TouchableOpacity
+          style={[styles.compactRow, isSelected && styles.compactRowSelected]}
+          onPress={() => handleSelectSale(item)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.compactRowLeft}>
+            <Text style={styles.compactOrderNum}>{item.order_number}</Text>
+            <Text style={styles.compactCustomer} numberOfLines={1}>
+              {(item as any).customer?.full_name ?? 'Walk-in Customer'}
+            </Text>
+          </View>
+          <View style={styles.compactRowRight}>
+            <Text style={styles.compactAmount}>{currency} {Number(item.total).toLocaleString()}</Text>
+            <View style={styles.compactMetaRow}>
+              <Text style={[styles.compactBadgeText, { color: paymentColor }]}>
+                {item.payment_status ?? 'pending'}
+              </Text>
+              <Text style={styles.compactDot}>•</Text>
+              <Text style={styles.compactTime}>
+                {format(new Date(item.created_at), 'HH:mm')}
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  const renderModernCard = (item: Sale) => {
+    const isSelected = selectedSale?.id === item.id;
+    const accentColor = STATUS_COLORS[item.status] ?? COLORS.textMuted;
+    const paymentColor = PAYMENT_COLORS[item.payment_status ?? 'pending'] ?? COLORS.textMuted;
+    const itemsCount = (item as any).items?.length ?? 0;
+
+    return (
+      <Animated.View entering={FadeInDown.duration(300)} layout={Layout.springify()}>
+        <TouchableOpacity
+          style={[styles.modernCard, isSelected && styles.modernCardSelected]}
+          onPress={() => handleSelectSale(item)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.modernCardHeader}>
+            <View>
+              <Text style={styles.modernCardOrderNum}>{item.order_number}</Text>
+              <Text style={styles.modernCardSub} numberOfLines={1}>
+                {(item as any).customer?.full_name ?? 'Walk-in Customer'}
+                {!!item.table_number && ` • Table ${item.table_number}`}
+              </Text>
+            </View>
+            <View style={[styles.modernBadge, { backgroundColor: accentColor + '15' }]}>
+              <Text style={[styles.modernBadgeText, { color: accentColor }]}>
+                {item.status}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.modernCardMiddle}>
+            <Text style={styles.modernCardMetaText}>
+              {itemsCount} {itemsCount === 1 ? 'Item' : 'Items'}
+            </Text>
+            <Text style={styles.modernCardTime}>
+              {format(new Date(item.created_at), 'HH:mm')}
+            </Text>
+          </View>
+
+          <View style={styles.modernCardFooter}>
+            <View style={styles.modernCardFooterLeft}>
+              <View style={[styles.paymentBadgeSmall, { backgroundColor: paymentColor + '15' }]}>
+                <Text style={[styles.paymentBadgeSmallText, { color: paymentColor }]}>
+                  {item.payment_status ?? 'pending'}
+                </Text>
+              </View>
+              <Text style={styles.modernCardMethodText}>
+                {(item.payment_method ?? 'cash').replace('_', ' ')}
+              </Text>
+            </View>
+            <Text style={styles.modernCardAmount}>{currency} {Number(item.total).toLocaleString()}</Text>
+          </View>
+
+          <View style={styles.modernCardActions}>
+            <TouchableOpacity style={styles.modernActionBtn} onPress={() => handleSelectSale(item)}>
+              <Ionicons name="eye-outline" size={14} color={COLORS.primary} />
+              <Text style={styles.modernActionBtnText}>View</Text>
+            </TouchableOpacity>
+            {item.status === 'active' && (
+              <TouchableOpacity style={styles.modernActionBtn} onPress={() => openAddItems(item)}>
+                <Ionicons name="pencil-outline" size={14} color={COLORS.accent} />
+                <Text style={[styles.modernActionBtnText, { color: COLORS.accent }]}>Edit</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.modernActionBtn} onPress={() => handleGenerateReceipt(item)}>
+              <Ionicons name="print-outline" size={14} color={COLORS.textSecondary} />
+              <Text style={[styles.modernActionBtnText, { color: COLORS.textSecondary }]}>Print</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  const renderKanbanBoard = () => {
+    const pendingSales = filtered.filter(s => s.status === 'active' && s.payment_status === 'pending');
+    const activeSales = filtered.filter(s => s.status === 'active' && s.payment_status !== 'pending');
+    const completedSales = filtered.filter(s => s.status === 'completed');
+
+    const renderKanbanCard = (item: Sale) => {
+      const paymentColor = PAYMENT_COLORS[item.payment_status ?? 'pending'] ?? COLORS.textMuted;
+
+      return (
+        <TouchableOpacity
+          key={item.id}
+          style={styles.kanbanCard}
+          onPress={() => handleSelectSale(item)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.kanbanCardHeader}>
+            <Text style={styles.kanbanCardOrderNum}>{item.order_number}</Text>
+            <Text style={styles.kanbanCardTime}>
+              {format(new Date(item.created_at), 'HH:mm')}
+            </Text>
+          </View>
+
+          <Text style={styles.kanbanCardCustomer} numberOfLines={1}>
+            {(item as any).customer?.full_name ?? 'Walk-in Customer'}
+          </Text>
+          {!!item.table_number && (
+            <Text style={styles.kanbanCardTable}>Table {item.table_number}</Text>
+          )}
+
+          <View style={styles.kanbanCardFooter}>
+            <View style={[styles.paymentBadgeSmall, { backgroundColor: paymentColor + '15' }]}>
+              <Text style={[styles.paymentBadgeSmallText, { color: paymentColor }]}>
+                {item.payment_status ?? 'pending'}
+              </Text>
+            </View>
+            <Text style={styles.kanbanCardAmount}>{currency} {Number(item.total).toLocaleString()}</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    };
+
+    return (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.kanbanScroll} contentContainerStyle={styles.kanbanScrollContent}>
+        {/* Pending Column */}
+        <View style={styles.kanbanCol}>
+          <View style={styles.kanbanColHeader}>
+            <View style={[styles.kanbanDot, { backgroundColor: COLORS.secondary }]} />
+            <Text style={styles.kanbanColTitle}>Pending</Text>
+            <View style={styles.kanbanColBadge}>
+              <Text style={styles.kanbanColBadgeText}>{pendingSales.length}</Text>
+            </View>
+          </View>
+          <ScrollView style={styles.kanbanCardScroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: SPACING.sm, paddingBottom: SPACING.xl }}>
+            {pendingSales.length === 0 ? (
+              <Text style={styles.kanbanEmptyText}>No pending orders</Text>
+            ) : (
+              pendingSales.map(renderKanbanCard)
+            )}
+          </ScrollView>
+        </View>
+
+        {/* Active Column */}
+        <View style={styles.kanbanCol}>
+          <View style={styles.kanbanColHeader}>
+            <View style={[styles.kanbanDot, { backgroundColor: COLORS.primary }]} />
+            <Text style={styles.kanbanColTitle}>Active</Text>
+            <View style={styles.kanbanColBadge}>
+              <Text style={styles.kanbanColBadgeText}>{activeSales.length}</Text>
+            </View>
+          </View>
+          <ScrollView style={styles.kanbanCardScroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: SPACING.sm, paddingBottom: SPACING.xl }}>
+            {activeSales.length === 0 ? (
+              <Text style={styles.kanbanEmptyText}>No active orders</Text>
+            ) : (
+              activeSales.map(renderKanbanCard)
+            )}
+          </ScrollView>
+        </View>
+
+        {/* Completed Column */}
+        <View style={styles.kanbanCol}>
+          <View style={styles.kanbanColHeader}>
+            <View style={[styles.kanbanDot, { backgroundColor: COLORS.success }]} />
+            <Text style={styles.kanbanColTitle}>Completed</Text>
+            <View style={styles.kanbanColBadge}>
+              <Text style={styles.kanbanColBadgeText}>{completedSales.length}</Text>
+            </View>
+          </View>
+          <ScrollView style={styles.kanbanCardScroll} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: SPACING.sm, paddingBottom: SPACING.xl }}>
+            {completedSales.length === 0 ? (
+              <Text style={styles.kanbanEmptyText}>No completed orders</Text>
+            ) : (
+              completedSales.map(renderKanbanCard)
+            )}
+          </ScrollView>
+        </View>
+      </ScrollView>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.statsStrip}
-        contentContainerStyle={styles.statsStripContent}
-      >
-        {[
-          { icon: 'receipt-outline', label: 'Orders', value: String(sales.length), color: COLORS.info },
-          { icon: 'time-outline', label: 'Active', value: String(activeCount), color: COLORS.success },
-          { icon: 'hourglass-outline', label: 'Pending', value: String(pendingCount), color: COLORS.warning },
-          {
-            icon: 'cash-outline',
-            label: 'Revenue',
-            value: `${currency} ${totalRevenue.toLocaleString()}`,
-            color: COLORS.accent,
-          },
-        ].map((stat) => (
-          <View key={stat.label} style={styles.statChip}>
-            <View style={[styles.statChipIcon, { backgroundColor: stat.color + '22' }]}>
-              <Ionicons name={stat.icon as any} size={13} color={stat.color} />
-            </View>
-            <Text style={[styles.statChipValue, { color: stat.color }]}>{stat.value}</Text>
-            <Text style={styles.statChipLabel}>{stat.label}</Text>
+      {/* ── Status Dropdown Modal ── */}
+      <Modal visible={statusOpen} transparent animationType="fade" onRequestClose={() => setStatusOpen(false)}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setStatusOpen(false)}>
+          <View style={styles.dropdownMenu}>
+            {['All', 'active', 'completed', 'cancelled', 'refunded'].map((statusOption) => (
+              <TouchableOpacity
+                key={statusOption}
+                style={[styles.dropdownItem, filterStatus === statusOption && styles.dropdownItemActive]}
+                onPress={() => {
+                  setFilterStatus(statusOption);
+                  setStatusOpen(false);
+                }}
+              >
+                <Text style={[styles.dropdownItemText, filterStatus === statusOption && styles.dropdownItemTextActive]}>
+                  {statusOption === 'All' ? 'All Statuses' : statusOption.charAt(0).toUpperCase() + statusOption.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        ))}
-      </ScrollView>
+        </TouchableOpacity>
+      </Modal>
 
+      {/* ── Date Dropdown Modal ── */}
+      <Modal visible={dateOpen} transparent animationType="fade" onRequestClose={() => setDateOpen(false)}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setDateOpen(false)}>
+          <View style={styles.dropdownMenu}>
+            {[
+              { label: 'All Time', value: 'All' },
+              { label: 'Today', value: 'Today' },
+              { label: 'This Week', value: 'Week' },
+              { label: 'This Month', value: 'Month' },
+            ].map((dt) => (
+              <TouchableOpacity
+                key={dt.value}
+                style={[styles.dropdownItem, filterDate === dt.value && styles.dropdownItemActive]}
+                onPress={() => {
+                  setFilterDate(dt.value);
+                  setDateOpen(false);
+                }}
+              >
+                <Text style={[styles.dropdownItemText, filterDate === dt.value && styles.dropdownItemTextActive]}>
+                  {dt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ── Payment Dropdown Modal ── */}
+      <Modal visible={paymentOpen} transparent animationType="fade" onRequestClose={() => setPaymentOpen(false)}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setPaymentOpen(false)}>
+          <View style={styles.dropdownMenu}>
+            {[
+              { label: 'Any Payment', value: 'All' },
+              { label: 'Cash', value: 'cash' },
+              { label: 'Mobile Money', value: 'mobile_money' },
+            ].map((pm) => (
+              <TouchableOpacity
+                key={pm.value}
+                style={[styles.dropdownItem, filterPayment === pm.value && styles.dropdownItemActive]}
+                onPress={() => {
+                  setFilterPayment(pm.value);
+                  setPaymentOpen(false);
+                }}
+              >
+                <Text style={[styles.dropdownItemText, filterPayment === pm.value && styles.dropdownItemTextActive]}>
+                  {pm.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+
+
+      {/* ── Summary Metric Cards ── */}
+      <View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.summaryScroll}
+          contentContainerStyle={styles.summaryScrollContent}
+        >
+          <LinearGradient colors={['#0165FC15', '#0165FC08']} style={styles.summaryCard}>
+            <View style={styles.summaryCardHeader}>
+              <Text style={styles.summaryCardTitle}>Total Orders</Text>
+              <Ionicons name="receipt-outline" size={15} color={COLORS.primary} />
+            </View>
+            <Text style={styles.summaryCardValue}>{todaySales.length}</Text>
+          </LinearGradient>
+
+          <LinearGradient colors={['#FFA50015', '#FFA50008']} style={styles.summaryCard}>
+            <View style={styles.summaryCardHeader}>
+              <Text style={styles.summaryCardTitle}>Pending Orders</Text>
+              <Ionicons name="time-outline" size={15} color={COLORS.secondary} />
+            </View>
+            <Text style={styles.summaryCardValue}>{statsPendingOrders}</Text>
+          </LinearGradient>
+
+          <LinearGradient colors={['#10B98115', '#10B98108']} style={styles.summaryCard}>
+            <View style={styles.summaryCardHeader}>
+              <Text style={styles.summaryCardTitle}>Completed</Text>
+              <Ionicons name="checkmark-done-outline" size={15} color={COLORS.success} />
+            </View>
+            <Text style={styles.summaryCardValue}>{completedToday}</Text>
+          </LinearGradient>
+
+          <LinearGradient colors={['#006D7715', '#006D7708']} style={styles.summaryCard}>
+            <View style={styles.summaryCardHeader}>
+              <Text style={styles.summaryCardTitle}>Revenue</Text>
+              <Ionicons name="cash-outline" size={15} color={COLORS.accent} />
+            </View>
+            <Text style={styles.summaryCardValue} numberOfLines={1}>
+              {currency} {todayRevenue >= 1000000 ? `${(todayRevenue / 1000000).toFixed(1)}M` : todayRevenue.toLocaleString()}
+            </Text>
+          </LinearGradient>
+        </ScrollView>
+      </View>
+
+      {/* ── Filters Section ── */}
+      <View style={styles.filterSelectorsRow}>
+        <TouchableOpacity style={styles.filterChip} onPress={() => setStatusOpen(true)}>
+          <Ionicons name="funnel-outline" size={12} color={COLORS.textSecondary} />
+          <Text style={styles.filterChipLabel} numberOfLines={1}>
+            {filterStatus === 'All' ? 'Status' : filterStatus === 'active' ? 'Active' : filterStatus.charAt(0).toUpperCase() + filterStatus.slice(1)}
+          </Text>
+          <Ionicons name="chevron-down" size={12} color={COLORS.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.filterChip} onPress={() => setDateOpen(true)}>
+          <Ionicons name="calendar-outline" size={12} color={COLORS.textSecondary} />
+          <Text style={styles.filterChipLabel} numberOfLines={1}>
+            {filterDate === 'All' ? 'Date' : filterDate === 'Week' ? 'This Week' : filterDate === 'Month' ? 'This Month' : filterDate}
+          </Text>
+          <Ionicons name="chevron-down" size={12} color={COLORS.textMuted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.filterChip} onPress={() => setPaymentOpen(true)}>
+          <Ionicons name="card-outline" size={12} color={COLORS.textSecondary} />
+          <Text style={styles.filterChipLabel} numberOfLines={1}>
+            {filterPayment === 'All' ? 'Payment' : filterPayment === 'mobile_money' ? 'Mobile' : filterPayment.charAt(0).toUpperCase() + filterPayment.slice(1)}
+          </Text>
+          <Ionicons name="chevron-down" size={12} color={COLORS.textMuted} />
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Search Bar ── */}
+      <View style={styles.searchBar}>
+        <Ionicons name="search-outline" size={14} color={COLORS.textMuted} />
+        <TextInput
+          style={[styles.searchInput, WEB_OUTLINE_NONE]}
+          placeholder="Search order number or customer..."
+          value={search}
+          onChangeText={setSearch}
+          placeholderTextColor={COLORS.textMuted}
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')}>
+            <Ionicons name="close-circle" size={14} color={COLORS.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── View Toggle & Add Button Row ── */}
+      <View style={styles.viewModeToggleRow}>
+        <View style={styles.viewToggleGroup}>
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setViewMode('list');
+            }}
+          >
+            <Ionicons name="list-outline" size={14} color={viewMode === 'list' ? COLORS.white : COLORS.textSecondary} />
+            <Text style={[styles.viewToggleBtnText, viewMode === 'list' && styles.viewToggleBtnTextActive]}>List</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, viewMode === 'card' && styles.viewToggleBtnActive]}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setViewMode('card');
+            }}
+          >
+            <Ionicons name="grid-outline" size={14} color={viewMode === 'card' ? COLORS.white : COLORS.textSecondary} />
+            <Text style={[styles.viewToggleBtnText, viewMode === 'card' && styles.viewToggleBtnTextActive]}>Card</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, viewMode === 'kanban' && styles.viewToggleBtnActive]}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setViewMode('kanban');
+            }}
+          >
+            <Ionicons name="albums-outline" size={14} color={viewMode === 'kanban' ? COLORS.white : COLORS.textSecondary} />
+            <Text style={[styles.viewToggleBtnText, viewMode === 'kanban' && styles.viewToggleBtnTextActive]}>Board</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity style={styles.ordersHeaderAddBtn} onPress={() => setNewOrderVisible(true)}>
+          <Ionicons name="add" size={14} color={COLORS.white} />
+          <Text style={styles.ordersHeaderAddBtnText}>New Order</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Main Layout ── */}
       <View style={styles.layout}>
         <View
           style={[
             styles.listCol,
-            isMobile && styles.listColMobile,
-            isTablet && styles.listColTablet,
-            isDesktop && styles.listColDesktop,
+            (isMobile || viewMode === 'kanban') && styles.listColMobile,
+            isTablet && viewMode !== 'kanban' && styles.listColTablet,
+            isDesktop && viewMode !== 'kanban' && styles.listColDesktop,
           ]}
         >
-          <View style={styles.listHeader}>
-            <Text style={styles.listSubtitle}>
-                {filtered.length} order{filtered.length !== 1 ? 's' : ''}
+          {loading && sales.length === 0 ? (
+            <View style={{ padding: SPACING.md }}>
+              <ListSkeleton count={6} />
+            </View>
+          ) : filtered.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <View style={styles.emptyStateIconContainer}>
+                <Ionicons
+                  name={!ordersLoaded ? "cloud-download-outline" : "receipt-outline"}
+                  size={40}
+                  color={COLORS.primary}
+                />
+              </View>
+              <Text style={styles.emptyStateTitle}>
+                {!ordersLoaded ? 'Load Your Orders' : 'No orders found'}
               </Text>
-            <TouchableOpacity style={styles.addBtn} onPress={() => setNewOrderVisible(true)}>
-              <Ionicons name="add" size={15} color={COLORS.white} />
-              <Text style={styles.addBtnLabel}>New Order</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterStrip} contentContainerStyle={styles.filterContent}>
-            {STATUSES.map((status) => {
-              const count = statusCount(status);
-              const active = filterStatus === status;
-              return (
-                <TouchableOpacity
-                  key={status}
-                  style={[styles.filterPill, active && styles.filterPillActive]}
-                  onPress={() => setFilterStatus(status)}
-                >
-                  <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
-                    {status.charAt(0).toUpperCase() + status.slice(1)}
-                  </Text>
-                  <View style={[styles.filterBadge, active && styles.filterBadgeActive]}>
-                    <Text style={[styles.filterBadgeText, active && styles.filterBadgeTextActive]}>{count}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          <View style={styles.searchBar}>
-            <Ionicons name="search-outline" size={14} color={COLORS.textMuted} />
-            <TextInput
-              style={[styles.searchInput, WEB_OUTLINE_NONE]}
-              placeholder="Order, customer, table..."
-              value={search}
-              onChangeText={setSearch}
-              placeholderTextColor={COLORS.textMuted}
-            />
-            {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <Ionicons name="close-circle" size={14} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {filtered.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name={!ordersLoaded ? "cloud-download-outline" : "receipt-outline"} size={40} color={COLORS.textMuted} />
-              <Text style={styles.emptyText}>
-                {!ordersLoaded ? 'Orders not loaded yet' : (search ? 'No matching orders' : 'No orders yet')}
+              <Text style={styles.emptyStateDescription}>
+                {!ordersLoaded
+                  ? 'Tap below to load active and completed orders for your business.'
+                  : 'We couldn\'t find any orders matching your filters.'}
               </Text>
               {!ordersLoaded ? (
                 <TouchableOpacity
-                  style={styles.emptyAddBtn}
+                  style={styles.emptyStateBtn}
                   onPress={() => {
                     setOrdersLoaded(true);
                     setLoading(true);
                     fetchSales();
                   }}
                 >
-                  <Ionicons name="cloud-download-outline" size={14} color={COLORS.white} />
-                  <Text style={styles.emptyAddText}>Load Orders</Text>
+                  <Ionicons name="cloud-download-outline" size={16} color={COLORS.white} />
+                  <Text style={styles.emptyStateBtnText}>Load Orders</Text>
                 </TouchableOpacity>
               ) : (
-                !search && (
-                  <TouchableOpacity style={styles.emptyAddBtn} onPress={() => setNewOrderVisible(true)}>
-                    <Ionicons name="add" size={13} color={COLORS.white} />
-                    <Text style={styles.emptyAddText}>Create First Order</Text>
-                  </TouchableOpacity>
-                )
+                <TouchableOpacity style={styles.emptyStateBtn} onPress={() => setNewOrderVisible(true)}>
+                  <Ionicons name="add" size={16} color={COLORS.white} />
+                  <Text style={styles.emptyStateBtnText}>Create New Order</Text>
+                </TouchableOpacity>
               )}
             </View>
+          ) : viewMode === 'kanban' ? (
+            renderKanbanBoard()
           ) : (
             <FlatList
               data={filtered}
@@ -1391,72 +1873,24 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
                 />
               }
               renderItem={({ item }) => {
-                const isSelected = showSplit && selectedSale?.id === item.id;
-                const accentColor = STATUS_COLORS[item.status] ?? COLORS.textMuted;
-                return (
-                  <TouchableOpacity
-                    style={[styles.billCard, isSelected && styles.billCardSelected]}
-                    onPress={() => handleSelectSale(item)}
-                    activeOpacity={0.78}
-                  >
-                    <View style={[styles.billAccentBar, { backgroundColor: accentColor }]} />
-                    <View style={styles.billCardInner}>
-                      <View style={styles.billCardTop}>
-                        <Text style={styles.billOrderNum}>{item.order_number}</Text>
-                        {statusBadge(item.status)}
-                      </View>
-                      <View style={styles.billCardMid}>
-                        {!!item.table_number && (
-                          <View style={styles.billMeta}>
-                            <Ionicons name="grid-outline" size={11} color={COLORS.textMuted} />
-                            <Text style={styles.billMetaText}>T{item.table_number}</Text>
-                          </View>
-                        )}
-                        {(item.guests ?? 0) > 0 && (
-                          <View style={styles.billMeta}>
-                            <Ionicons name="people-outline" size={11} color={COLORS.textMuted} />
-                            <Text style={styles.billMetaText}>{item.guests}</Text>
-                          </View>
-                        )}
-                        <View style={styles.billMeta}>
-                          <Ionicons name="time-outline" size={11} color={COLORS.textMuted} />
-                          <Text style={styles.billMetaText}>{format(new Date(item.created_at), 'HH:mm')}</Text>
-                        </View>
-                        {!!(item as any).customer?.full_name && (
-                          <View style={styles.billMeta}>
-                            <Ionicons name="person-outline" size={11} color={COLORS.textMuted} />
-                            <Text style={styles.billMetaText} numberOfLines={1}>
-                              {(item as any).customer.full_name}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                      {(proformaIssuedBadge(item) || receiptIssuedBadge(item)) && (
-                        <View style={styles.billCardDocs}>
-                          {proformaIssuedBadge(item)}
-                          {receiptIssuedBadge(item)}
-                        </View>
-                      )}
-                      <View style={styles.billCardBottom}>
-                        {payBadge(item.payment_status ?? 'pending')}
-                        <Text style={styles.billTotal}>{currency} {Number(item.total).toLocaleString()}</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
+                if (viewMode === 'list') {
+                  return renderCompactRow(item);
+                }
+                return renderModernCard(item);
               }}
-              ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
+              ItemSeparatorComponent={() => <View style={{ height: viewMode === 'list' ? 1 : 12 }} />}
             />
           )}
         </View>
 
-        {showSplit && selectedSale && (
+        {/* Tablet/Desktop Detail Split Column */}
+        {showSplit && selectedSale && viewMode !== 'kanban' && (
           <ScrollView style={styles.detailCol} contentContainerStyle={styles.detailColContent}>
             <DetailContent sale={selectedSale} />
           </ScrollView>
         )}
 
-        {showSplit && !selectedSale && (
+        {showSplit && !selectedSale && viewMode !== 'kanban' && (
           <View style={styles.detailEmpty}>
             <View style={styles.detailEmptyIcon}>
               <Ionicons name="receipt-outline" size={36} color={COLORS.textMuted} />
@@ -1467,13 +1901,13 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
         )}
       </View>
 
-      {loading && (
+      {loading && sales.length > 0 && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator color={COLORS.accent} size="large" />
         </View>
       )}
 
-      <Modal visible={isMobile && detailVisible} transparent animationType="slide" onRequestClose={() => setDetailVisible(false)}>
+      <Modal visible={(isMobile || viewMode === 'kanban') && detailVisible} transparent animationType="slide" onRequestClose={() => setDetailVisible(false)}>
         <View style={styles.overlay}>
           <TouchableOpacity style={{ flex: 1 }} onPress={() => setDetailVisible(false)} />
           <View style={styles.mobileSheet}>
@@ -1493,9 +1927,10 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
       <Modal visible={newOrderVisible} transparent animationType="fade" onRequestClose={() => setNewOrderVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalBox}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>New Order</Text>
+            <View style={[styles.modalBox, { padding: 0, overflow: 'hidden', maxHeight: '90%' }]}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: SPACING.lg }}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>New Order</Text>
                 <TouchableOpacity onPress={() => setNewOrderVisible(false)} style={styles.modalCloseBtn}>
                   <Ionicons name="close" size={20} color={COLORS.textSecondary} />
                 </TouchableOpacity>
@@ -1563,6 +1998,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
                   )}
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -1571,9 +2007,10 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
       <Modal visible={chargeVisible} transparent animationType="fade" onRequestClose={() => setChargeVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalBox}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Charge Customer</Text>
+            <View style={[styles.modalBox, { padding: 0, overflow: 'hidden', maxHeight: '90%' }]}>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: SPACING.lg }}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Charge Customer</Text>
                 <TouchableOpacity onPress={() => setChargeVisible(false)} style={styles.modalCloseBtn}>
                   <Ionicons name="close" size={20} color={COLORS.textSecondary} />
                 </TouchableOpacity>
@@ -1703,24 +2140,24 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
                   )}
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={addItemVisible} transparent animationType="slide" onRequestClose={() => setAddItemVisible(false)}>
-        <View style={styles.overlay}>
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => setAddItemVisible(false)} />
-          <View style={[styles.mobileSheet, { maxHeight: '80%' }]}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.addItemsHeader}>
-              <Text style={styles.modalTitle}>Add Items</Text>
-              <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setAddItemVisible(false)}>
-                <Ionicons name="close" size={20} color={COLORS.textSecondary} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalBox, { padding: 0, overflow: 'hidden', height: '75%', maxHeight: '90%' }]}>
+              <View style={[styles.modalHeader, { padding: SPACING.lg, paddingBottom: 0 }]}>
+                <Text style={styles.modalTitle}>Add Items</Text>
+                <TouchableOpacity onPress={() => setAddItemVisible(false)} style={styles.modalCloseBtn}>
+                  <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+                </TouchableOpacity>
+              </View>
 
-            <View style={[styles.searchBar, { marginHorizontal: 0, marginBottom: SPACING.sm }]}>
+            <View style={[styles.searchBar, { marginHorizontal: SPACING.lg, marginTop: SPACING.md, marginBottom: SPACING.sm }]}>
               <Ionicons name="search-outline" size={14} color={COLORS.textMuted} />
               <TextInput
                 style={[styles.searchInput, WEB_OUTLINE_NONE]}
@@ -1731,7 +2168,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
               />
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ flex: 1, marginBottom: SPACING.md }}>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: SPACING.lg, paddingTop: 0 }}>
               {filteredProducts.length === 0 && (
                 <Text style={[styles.emptyItemsText, { marginTop: SPACING.xl }]}>No products found</Text>
               )}
@@ -1786,22 +2223,28 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
               </View>
             )}
 
-            <TouchableOpacity
-              style={[styles.chargeConfirmBtn, savingItems && { opacity: 0.7 }, { marginBottom: SPACING.sm }]}
-              onPress={handleSaveItems}
-              disabled={savingItems}
-            >
-              {savingItems ? (
-                <ActivityIndicator color={COLORS.white} size="small" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-outline" size={15} color={COLORS.white} />
-                  <Text style={styles.modalSaveText}>Add to Order</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            <View style={[styles.modalBtns, { padding: SPACING.lg, borderTopWidth: 1, borderTopColor: COLORS.border }]}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setAddItemVisible(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.chargeConfirmBtn, savingItems && { opacity: 0.7 }, { flex: 1 }]}
+                onPress={handleSaveItems}
+                disabled={savingItems}
+              >
+                {savingItems ? (
+                  <ActivityIndicator color={COLORS.white} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-outline" size={15} color={COLORS.white} />
+                    <Text style={styles.modalSaveText}>Add to Order</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -1818,40 +2261,539 @@ const styles = StyleSheet.create({
     elevation: 20,
   },
 
-  statsStrip: {
-    flexGrow: 0,
-    flexShrink: 0,
+  // ── Header styles ──
+  ordersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.base,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
+    backgroundColor: COLORS.surface,
+  },
+  ordersHeaderLeft: {
+    flex: 1,
+  },
+  ordersHeaderTitle: {
+    fontSize: FONTS.sizes.xl,
+    fontWeight: '800',
+    color: COLORS.text,
+    letterSpacing: -0.5,
+  },
+  ordersHeaderSubtitle: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  ordersHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  headerIconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  headerIconBtnActive: {
+    backgroundColor: COLORS.primary + '10',
+    borderColor: COLORS.primary,
+  },
+  notificationDot: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.error,
+  },
+  headerAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    fontSize: FONTS.sizes.base,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+
+  // ── Stats Cards Styles ──
+  summaryScroll: {
+    backgroundColor: COLORS.surface,
+    paddingVertical: SPACING.sm,
+  },
+  summaryScrollContent: {
+    paddingHorizontal: SPACING.base,
+    gap: SPACING.sm,
+  },
+  summaryCard: {
+    width: 140,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  summaryCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  summaryCardTitle: {
+    fontSize: FONTS.sizes.xs,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  summaryCardValue: {
+    fontSize: FONTS.sizes.md,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginTop: 2,
+  },
+
+  // ── Dropdown Filters ──
+  filterSelectorsRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.base,
+    paddingVertical: SPACING.sm,
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  statsStripContent: {
+  filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.base,
-    paddingVertical: SPACING.sm,
-    gap: SPACING.sm,
-  },
-  statChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    backgroundColor: COLORS.background,
+    gap: 6,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 7,
     borderRadius: RADIUS.full,
-    paddingVertical: 5,
-    paddingHorizontal: SPACING.sm,
+    backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  statChipIcon: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  filterChipLabel: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+
+  // ── View Toggle and Action Row ──
+  viewModeToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.base,
+    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.surface,
+  },
+  viewToggleGroup: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.background,
+    borderRadius: RADIUS.sm,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  viewToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.sm - 2,
+  },
+  viewToggleBtnActive: {
+    backgroundColor: COLORS.primary,
+  },
+  viewToggleBtnText: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  viewToggleBtnTextActive: {
+    color: COLORS.white,
+  },
+  ordersHeaderAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.accent,
+    borderRadius: RADIUS.sm,
+    paddingVertical: 7,
+    paddingHorizontal: SPACING.md,
+  },
+  ordersHeaderAddBtnText: {
+    fontSize: FONTS.sizes.xs,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+
+  // ── Compact Row Styles ──
+  compactRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.base,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  compactRowSelected: {
+    backgroundColor: COLORS.primary + '06',
+  },
+  compactRowLeft: {
+    flex: 1,
+    gap: 2,
+  },
+  compactRowRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  compactOrderNum: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  compactCustomer: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textSecondary,
+  },
+  compactAmount: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  compactMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  compactBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  compactDot: {
+    fontSize: 9,
+    color: COLORS.textMuted,
+  },
+  compactTime: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textMuted,
+  },
+
+  // ── Modern Card Styles ──
+  modernCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: SPACING.md,
+    marginHorizontal: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOWS.sm,
+  },
+  modernCardSelected: {
+    borderColor: COLORS.accent,
+    backgroundColor: '#FFFDF9',
+  },
+  modernCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.sm,
+  },
+  modernCardOrderNum: {
+    fontSize: FONTS.sizes.base,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  modernCardSub: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  modernBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+  },
+  modernBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  modernCardMiddle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+    paddingBottom: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  modernCardTime: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textMuted,
+  },
+  modernCardMetaText: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  modernCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  modernCardFooterLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  paymentBadgeSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.xs,
+  },
+  paymentBadgeSmallText: {
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  modernCardMethodText: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textSecondary,
+    textTransform: 'capitalize',
+  },
+  modernCardAmount: {
+    fontSize: FONTS.sizes.md,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  modernCardActions: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+    paddingTop: SPACING.sm,
+  },
+  modernActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    borderRadius: RADIUS.xs,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  statChipValue: { fontSize: FONTS.sizes.sm, fontWeight: '700' },
-  statChipLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
+  modernActionBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+
+  // ── Kanban View Styles ──
+  kanbanScroll: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  kanbanScrollContent: {
+    paddingHorizontal: SPACING.base,
+    paddingVertical: SPACING.md,
+    gap: SPACING.md,
+  },
+  kanbanCol: {
+    width: 260,
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  kanbanColHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+    paddingHorizontal: 4,
+  },
+  kanbanDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  kanbanColTitle: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '700',
+    color: COLORS.text,
+    flex: 1,
+  },
+  kanbanColBadge: {
+    backgroundColor: COLORS.border,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: RADIUS.full,
+  },
+  kanbanColBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+  },
+  kanbanCardScroll: {
+    flex: 1,
+  },
+  kanbanEmptyText: {
+    fontSize: FONTS.sizes.xs,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginTop: SPACING.xl,
+    fontStyle: 'italic',
+  },
+  kanbanCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.sm,
+    padding: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOWS.xs,
+  },
+  kanbanCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  kanbanCardOrderNum: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  kanbanCardTime: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+  },
+  kanbanCardCustomer: {
+    fontSize: FONTS.sizes.xs,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+  },
+  kanbanCardTable: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  kanbanCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+  },
+  kanbanCardAmount: {
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+
+  // ── Dropdown Picker Modal ──
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dropdownMenu: {
+    width: 240,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    ...SHADOWS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  dropdownItem: {
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.sm,
+  },
+  dropdownItemActive: {
+    backgroundColor: COLORS.primary + '10',
+  },
+  dropdownItemText: {
+    fontSize: FONTS.sizes.sm,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  dropdownItemTextActive: {
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
+
+  // ── Empty State ──
+  emptyStateContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING['2xl'],
+    gap: SPACING.sm,
+  },
+  emptyStateIconContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: COLORS.primary + '12',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.xs,
+  },
+  emptyStateTitle: {
+    fontSize: FONTS.sizes.md,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  emptyStateDescription: {
+    fontSize: FONTS.sizes.sm,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: SPACING.sm,
+  },
+  emptyStateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: 10,
+    borderRadius: RADIUS.sm,
+    ...SHADOWS.sm,
+  },
+  emptyStateBtnText: {
+    color: COLORS.white,
+    fontSize: FONTS.sizes.sm,
+    fontWeight: '700',
+  },
 
   layout: { flex: 1, flexDirection: 'row', overflow: 'hidden' },
   listCol: {
@@ -1865,69 +2807,6 @@ const styles = StyleSheet.create({
   listColMobile: { flex: 1 },
   listColTablet: { flex: 0, width: '42%' },
   listColDesktop: { flex: 0, width: 320 },
-
-  listHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.base,
-    paddingVertical: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  listTitle: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text },
-  listSubtitle: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 1 },
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: COLORS.accent,
-    borderRadius: RADIUS.md,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-  },
-  addBtnLabel: { fontSize: FONTS.sizes.sm, fontWeight: '600', color: COLORS.white },
-
-  // filterStrip: the outer ScrollView wrapper — must NOT shrink on web or it collapses to 0
-  filterStrip: {
-    flexShrink: 0,
-    flexGrow: 0,
-  },
-  filterContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.base,
-    paddingTop: 6,
-    paddingBottom: 6,
-    gap: SPACING.xs,
-  },
-  filterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 5,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 5,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  filterPillActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  filterPillText: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary },
-  filterPillTextActive: { color: COLORS.white, fontWeight: '600' },
-  filterBadge: {
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  filterBadgeActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
-  filterBadgeText: { fontSize: 9, fontWeight: '700', color: COLORS.textSecondary },
-  filterBadgeTextActive: { color: COLORS.white },
 
   searchBar: {
     flexDirection: 'row',
@@ -1950,54 +2829,6 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
 
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: SPACING['2xl'],
-    gap: SPACING.sm,
-  },
-  emptyText: { fontSize: FONTS.sizes.base, color: COLORS.textSecondary },
-  emptyAddBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    marginTop: SPACING.sm,
-    backgroundColor: COLORS.accent,
-    paddingHorizontal: SPACING.base,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-  },
-  emptyAddText: { color: COLORS.white, fontSize: FONTS.sizes.sm, fontWeight: '600' },
-
-  billCard: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface,
-    marginHorizontal: SPACING.sm,
-    borderRadius: RADIUS.md,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    ...SHADOWS.sm,
-  },
-  billCardSelected: { borderColor: COLORS.accent, backgroundColor: '#FFFDF5' },
-  billAccentBar: { width: 4 },
-  billCardInner: { flex: 1, padding: SPACING.sm, gap: 4 },
-  billCardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  billOrderNum: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.text },
-  billCardMid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
-  billMeta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  billMetaText: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
-  billCardDocs: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs },
-  billCardBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   billTotal: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.text },
 
   badge: {
@@ -2046,9 +2877,7 @@ const styles = StyleSheet.create({
   orderTime: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 2 },
 
   metaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginBottom: SPACING.md },
-  metaGridCompact: {
-    flexDirection: 'column',
-  },
+  metaGridCompact: {},
   metaCell: {
     flex: 1,
     minWidth: 90,
@@ -2273,12 +3102,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end', alignItems: 'center' },
   mobileSheet: {
+    width: '100%',
     backgroundColor: COLORS.surface,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    padding: SPACING.xl,
+    padding: SPACING.lg,
     maxHeight: '92%',
   },
   sheetHandle: {
@@ -2301,7 +3131,6 @@ const styles = StyleSheet.create({
   modalBox: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
-    padding: SPACING.xl,
     width: '100%',
     maxWidth: 420,
     ...SHADOWS.lg,

@@ -22,8 +22,10 @@ import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../lib/supabase';
-import { useRealtimeSubscription } from '../../lib/hooks';
 import { Product } from '../../types';
+import { useRealtimeSubscription } from '../../lib/hooks';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { COLORS, SPACING, FONTS, RADIUS, SHADOWS, BREAKPOINTS } from '../../lib/constants';
 
 type ProductWithCategory = Product & { category?: { name?: string } };
@@ -64,6 +66,7 @@ export function POSScreen() {
     clearCart,
     subtotal,
     totalDiscount,
+    tax,
     total,
     itemCount,
   } = useCart();
@@ -147,6 +150,7 @@ export function POSScreen() {
         order_number: orderNumber,
         status,
         subtotal,
+        tax,
         discount: totalDiscount,
         total,
         payment_status: paymentStatus,
@@ -229,6 +233,62 @@ export function POSScreen() {
       Alert.alert('Save order error', e?.message ?? 'Could not save this order.');
     } finally {
       setProcessingSale(false);
+    }
+  };
+
+  const printReceipt = async (orderNumber: string, soldItems: any[], finalTotal: number, finalTax: number, finalSubtotal: number, change: number, received: number, pMethod: string) => {
+    try {
+      const html = `
+        <html>
+          <head>
+            <style>
+              body { font-family: monospace; padding: 20px; color: #000; font-size: 14px; }
+              .center { text-align: center; }
+              .bold { font-weight: bold; }
+              .divider { border-top: 1px dashed #000; margin: 10px 0; }
+              table { width: 100%; border-collapse: collapse; }
+              td { padding: 4px 0; }
+              .right { text-align: right; }
+            </style>
+          </head>
+          <body>
+            <div class="center bold" style="font-size: 18px;">${business?.name || 'SmartBiz TZ'}</div>
+            <div class="center">Receipt: ${orderNumber}</div>
+            <div class="center">Date: ${new Date().toLocaleString()}</div>
+            <div class="divider"></div>
+            <table>
+              ${soldItems.map(i => `
+                <tr>
+                  <td colspan="3">${i.product.name}</td>
+                </tr>
+                <tr>
+                  <td>${i.quantity} x ${i.product.selling_price}</td>
+                  <td class="right">${(i.quantity * i.product.selling_price)}</td>
+                </tr>
+              `).join('')}
+            </table>
+            <div class="divider"></div>
+            <table>
+              <tr><td>Subtotal:</td><td class="right">${finalSubtotal}</td></tr>
+              <tr><td>Tax (18%):</td><td class="right">${finalTax}</td></tr>
+              <tr class="bold"><td>Total:</td><td class="right">${currency} ${finalTotal}</td></tr>
+              <tr><td>Payment:</td><td class="right">${pMethod.toUpperCase()}</td></tr>
+              ${pMethod === 'cash' ? `<tr><td>Cash:</td><td class="right">${received}</td></tr><tr><td>Change:</td><td class="right">${change}</td></tr>` : ''}
+            </table>
+            <div class="divider"></div>
+            <div class="center">Thank you for your business!</div>
+          </body>
+        </html>
+      `;
+      const { uri } = await Print.printToFileAsync({ html });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri);
+      } else {
+        Alert.alert('Printed', 'Receipt generated successfully!');
+      }
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'Could not generate receipt.');
     }
   };
 
@@ -476,12 +536,27 @@ export function POSScreen() {
       setMobilePhone('');
       setPayerName('');
       const change = payMethod === 'cash' ? cashChange : 0;
-      Alert.alert(
-        payMethod === 'cash' ? 'Payment Confirmed' : 'Payment Requested',
-        payMethod === 'cash'
-          ? `Sale ${orderNumber} recorded.\nChange: ${currency} ${change.toLocaleString()}`
-          : `A payment prompt has been sent to ${mobilePhone.trim()}. The sale will complete automatically after customer confirmation.`,
-      );
+
+      // Store current cart items for the receipt before clearCart is reflected (since state updates are async, we can use local refs or just pass the items directly)
+      const currentItems = [...items];
+      const currentTotal = total;
+      const currentSubtotal = subtotal;
+      const currentTax = tax;
+      const currentReceived = parseFloat(cashReceived) || 0;
+
+      if ((payMethod as string) !== 'mobile_money') {
+        Alert.alert(
+          'Payment Confirmed',
+          `Sale ${orderNumber} recorded.\nChange: ${currency} ${change.toLocaleString()}`,
+          [
+            { text: 'Done', style: 'cancel' },
+            { text: 'Print Receipt', onPress: () => printReceipt(orderNumber, currentItems, currentTotal, currentTax, currentSubtotal, change, currentReceived, payMethod) }
+          ]
+        );
+      } else {
+        Alert.alert('Payment Requested', `A payment prompt has been sent to ${mobilePhone.trim()}. The sale will complete automatically after customer confirmation.`);
+      }
+
       fetchProducts();
     } catch (e: any) {
       setCheckoutFeedback({ type: 'error', text: e?.message ?? 'Could not complete checkout.' });
@@ -551,6 +626,10 @@ export function POSScreen() {
         Alert.alert(
           'Payment successful',
           doneOrder ? `Sale ${doneOrder} has been paid successfully.` : 'Customer payment confirmed successfully.',
+          doneOrder ? [
+            { text: 'Done', style: 'cancel' },
+            { text: 'Print Receipt', onPress: () => printReceipt(doneOrder, items, total, tax, subtotal, 0, total, 'mobile_money') }
+          ] : undefined
         );
         return;
       }
@@ -616,6 +695,7 @@ export function POSScreen() {
   const summaryRows = [
     { label: 'Subtotal', value: subtotal, total: false },
     { label: 'Discount', value: totalDiscount, total: false },
+    { label: 'Tax', value: tax, total: false },
     { label: 'Total', value: total, total: true },
   ];
 
@@ -713,9 +793,9 @@ export function POSScreen() {
                   </View>
 
                   {isMobile ? (
-                    <ScrollView 
-                      horizontal 
-                      showsHorizontalScrollIndicator={false} 
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
                       style={{ flexGrow: 0 }}
                       contentContainerStyle={styles.categoryChips}
                     >
@@ -723,7 +803,7 @@ export function POSScreen() {
                         <Pressable
                           key={c}
                           style={[
-                            styles.categoryChip, 
+                            styles.categoryChip,
                             categoryFilter === c && styles.categoryChipActive,
                             { marginRight: SPACING.sm }
                           ]}
@@ -1094,7 +1174,7 @@ export function POSScreen() {
 
               {/* Method selector */}
               <Text style={styles.fieldLabel}>Payment Method</Text>
-              <View style={styles.methodRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.methodRow}>
                 {([
                   { id: 'cash'         as const, label: 'Cash',         icon: 'cash-outline' },
                   { id: 'mobile_money' as const, label: 'Mobile Money', icon: 'phone-portrait-outline' },
@@ -1109,7 +1189,7 @@ export function POSScreen() {
                     <Text style={[styles.methodChipText, payMethod === m.id && styles.methodChipTextActive]}>{m.label}</Text>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </ScrollView>
 
               {/* Cash fields */}
               {payMethod === 'cash' && (

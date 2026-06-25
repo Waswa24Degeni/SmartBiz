@@ -8,12 +8,15 @@ interface Props {
   subtitle?: string;
   labels: string[];
   values: number[];
+  values2?: number[];
+  colors?: [string, string];
+  colors2?: [string, string];
 }
 
-export const SalesChart = React.memo(function SalesChart({ title, subtitle, labels, values }: Props) {
+export const SalesChart = React.memo(function SalesChart({ title, subtitle, labels, values, values2, colors = ['#14B8A6', '#0D9488'], colors2 }: Props) {
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
-  const maxVal = Math.max(...values, 1);
+  const maxVal = Math.max(...values, ...(values2 || []), 1);
   const barMaxHeight = isMobile ? 110 : 140;
 
   return (
@@ -38,18 +41,27 @@ export const SalesChart = React.memo(function SalesChart({ title, subtitle, labe
         {/* Bars */}
         <View style={styles.barsRow}>
           {values.map((v, i) => {
-            const h = Math.max(4, Math.round((v / maxVal) * barMaxHeight));
+            const h1 = Math.max(4, Math.round((v / maxVal) * barMaxHeight));
+            const h2 = values2 ? Math.max(4, Math.round((values2[i] / maxVal) * barMaxHeight)) : 0;
             return (
               <View key={`${labels[i]}-${i}`} style={styles.barCol}>
                 <View style={styles.barWrap}>
                   <LinearGradient
-                    colors={['#14B8A6', '#0D9488']}
+                    colors={colors}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 0, y: 1 }}
-                    style={[styles.bar, { height: h }]}
+                    style={[styles.bar, { height: h1 }]}
                   />
+                  {values2 && colors2 && (
+                    <LinearGradient
+                      colors={colors2}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={[styles.bar, { height: h2, marginLeft: 2 }]}
+                    />
+                  )}
                 </View>
-                <Text style={styles.barLabel}>{labels[i]}</Text>
+                <Text style={styles.barLabel} numberOfLines={1}>{labels[i]}</Text>
               </View>
             );
           })}
@@ -128,16 +140,17 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   barWrap: {
-    width: '70%',
-    maxWidth: 32,
-    alignItems: 'stretch',
-    justifyContent: 'flex-end',
+    flexDirection: 'row',
+    width: '100%',
+    maxWidth: 40,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   bar: {
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
+    flex: 1,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
     minHeight: 4,
-    width: '100%',
   },
   barLabel: {
     marginTop: SPACING.xs,

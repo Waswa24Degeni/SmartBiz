@@ -13,6 +13,7 @@ interface HeaderProps {
   rightActions?: React.ReactNode;
   onNotificationsPress?: () => void;
   onActivityPress?: () => void;
+  onSearchPress?: () => void;
   notificationsBadge?: number;
   activityBadge?: number;
 }
@@ -26,6 +27,7 @@ export function Header({
   rightActions,
   onNotificationsPress,
   onActivityPress,
+  onSearchPress,
   notificationsBadge = 0,
   activityBadge = 0,
 }: HeaderProps) {
@@ -77,6 +79,11 @@ export function Header({
         <View style={styles.right}>
 
           {rightActions}
+          {onSearchPress && (
+            <TouchableOpacity style={styles.iconBtn} onPress={onSearchPress}>
+              <Ionicons name="search-outline" size={20} color={COLORS.text} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.iconBtn} onPress={onNotificationsPress} disabled={!onNotificationsPress}>
             <Ionicons name="notifications-outline" size={20} color={COLORS.text} />
             {notificationsBadge > 0 && (

@@ -13,13 +13,17 @@ const supabaseAnonKey =
   process.env.EXPO_PUBLIC_SUPABASE_KEY ??
   'your-anon-key';
 
-// On web use localStorage; on native use AsyncStorage
+// On web use localStorage; on native use SecureStore
 let storage: any;
 if (Platform.OS === 'web') {
   storage = localStorage;
 } else {
-  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-  storage = AsyncStorage;
+  const SecureStore = require('expo-secure-store');
+  storage = {
+    getItem: (key: string) => SecureStore.getItemAsync(key),
+    setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
+    removeItem: (key: string) => SecureStore.deleteItemAsync(key),
+  };
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -30,6 +34,27 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: Platform.OS === 'web',
   },
 });
+
+export const SESSION_ACTIVITY_KEY = 'smartbiz_last_activity';
+
+export async function updateLastActivity(): Promise<void> {
+  const now = new Date().toISOString();
+  if (Platform.OS === 'web') {
+    localStorage.setItem(SESSION_ACTIVITY_KEY, now);
+  } else {
+    const SecureStore = require('expo-secure-store');
+    await SecureStore.setItemAsync(SESSION_ACTIVITY_KEY, now);
+  }
+}
+
+export async function getLastActivity(): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    return localStorage.getItem(SESSION_ACTIVITY_KEY);
+  } else {
+    const SecureStore = require('expo-secure-store');
+    return await SecureStore.getItemAsync(SESSION_ACTIVITY_KEY);
+  }
+}
 
 export async function clearStoredAuthSession(): Promise<void> {
   const authKeyPattern = /(^sb-.*-auth-token$)|(^supabase\.auth\.token$)/;
@@ -43,13 +68,21 @@ export async function clearStoredAuthSession(): Promise<void> {
       }
     }
     keysToDelete.forEach((key) => localStorage.removeItem(key));
+    localStorage.removeItem(SESSION_ACTIVITY_KEY);
     return;
   }
 
-  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-  const keys: string[] = await AsyncStorage.getAllKeys();
-  const keysToDelete = keys.filter((key) => authKeyPattern.test(key));
-  if (keysToDelete.length > 0) {
-    await AsyncStorage.multiRemove(keysToDelete);
+  // On Native, we can't easily iterate all SecureStore keys without knowing them.
+  // We'll delete the common known ones based on the URL, plus a fallback cleanup.
+  try {
+    const SecureStore = require('expo-secure-store');
+    // Supabase forms the key based on the URL host
+    const urlObj = new URL(supabaseUrl);
+    const hostKey = urlObj.hostname.split('.')[0];
+    await SecureStore.deleteItemAsync(`sb-${hostKey}-auth-token`);
+    await SecureStore.deleteItemAsync('supabase.auth.token');
+    await SecureStore.deleteItemAsync(SESSION_ACTIVITY_KEY);
+  } catch (e) {
+    console.warn('Error clearing SecureStore:', e);
   }
 }

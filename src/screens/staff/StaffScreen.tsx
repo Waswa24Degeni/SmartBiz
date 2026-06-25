@@ -14,8 +14,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { createClient } from '@supabase/supabase-js';
 import { useAuth } from '../../context/AuthContext';
-import { COLORS, FONTS, RADIUS, SPACING, BREAKPOINTS } from '../../lib/constants';
+import { COLORS, FONTS, RADIUS, SPACING, BREAKPOINTS, SHADOWS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
+import { format } from 'date-fns';
 
 interface StaffRow {
   id: string;
@@ -415,66 +416,101 @@ export function StaffScreen() {
   }
 
   return (
-    <ScrollView
-      style={[styles.section, isMobile && styles.sectionMobile]}
-      contentContainerStyle={{ paddingBottom: SPACING['2xl'] }}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={[styles.headerRow, isMobile && styles.headerRowMobile]}>
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
         <View>
-          <Text style={[styles.sectionTitle, isMobile && styles.sectionTitleMobile]}>Staff & Permissions</Text>
-          <Text style={styles.sectionSubtitle}>Control employee module access by permissions.</Text>
+          <Text style={styles.headerTitle}>Staff & Permissions</Text>
+          <Text style={styles.headerSubtitle}>Control employee access and roles</Text>
         </View>
-        <TouchableOpacity style={[styles.addBtn, isMobile && styles.addBtnMobile]} onPress={openCreate}>
-          <Ionicons name="add" size={16} color={COLORS.white} />
-          <Text style={styles.addBtnText}>Add Staff</Text>
-        </TouchableOpacity>
+        <Text style={styles.headerDate}>Today • {format(new Date(), 'MMMM dd, yyyy')}</Text>
       </View>
 
-      <View style={[styles.statsRow, isMobile && styles.statsRowMobile]}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{rows.length}</Text>
-          <Text style={styles.statLabel}>Total Staff</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{activeCount}</Text>
-          <Text style={styles.statLabel}>Active</Text>
-        </View>
-      </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: SPACING['2xl'] }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Overview Card */}
+        <View style={styles.overviewCard}>
+          <View style={styles.overviewLeft}>
+            <Text style={styles.overviewLabel}>Total Staff</Text>
+            <Text style={styles.overviewValue}>{rows.length}</Text>
+            <Text style={styles.overviewCount}>Active: {activeCount}</Text>
+          </View>
 
-      <View style={styles.formCard}>
-        {rows.length === 0 ? (
-          <Text style={styles.emptyText}>No staff assigned yet.</Text>
-        ) : (
-          rows.map((row) => (
-            <View key={row.id} style={[styles.staffRow, isMobile && styles.staffRowMobile]}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.staffName}>{row.user?.full_name ?? row.user?.email ?? 'Unknown'}</Text>
-                <Text style={styles.staffEmail}>{row.user?.email ?? '-'}</Text>
-                <View style={styles.metaRow}>
-                  <View style={[styles.roleBadge, { backgroundColor: getRoleColor(row.role) + '20' }]}>
-                    <Text style={[styles.roleBadgeText, { color: getRoleColor(row.role) }]}>{row.role}</Text>
-                  </View>
-                  <View style={[styles.roleBadge, { backgroundColor: row.is_active ? COLORS.successLight : COLORS.errorLight }]}>
-                    <Text style={[styles.roleBadgeText, { color: row.is_active ? COLORS.success : COLORS.error }]}>
-                      {row.is_active ? 'active' : 'inactive'}
+          <View style={styles.overviewRight}>
+            <View style={styles.circularFrame}>
+              <Ionicons name="people" size={32} color={COLORS.white} />
+            </View>
+            <TouchableOpacity style={styles.addBtn} onPress={openCreate}>
+              <Ionicons name="add" size={16} color={COLORS.primary} />
+              <Text style={styles.addBtnText}>Add Staff</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* AI Insights */}
+        <View style={styles.insightsWrap}>
+          <Text style={styles.insightsTitle}>Staff Insights</Text>
+          <View style={styles.insightsList}>
+            <View style={styles.insightCard}>
+              <Text style={styles.insightText}>💡 {activeCount} out of {rows.length} staff members are currently active.</Text>
+            </View>
+          </View>
+        </View>
+
+        <Text style={styles.ledgerHeader}>Staff Directory</Text>
+
+        <View style={styles.listContainer}>
+          {rows.length === 0 ? (
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIcon}><Ionicons name="people-outline" size={44} color={COLORS.textMuted} /></View>
+              <Text style={styles.emptyTitle}>No staff assigned yet.</Text>
+              <Text style={styles.emptySub}>Add staff members to grant them access to this business.</Text>
+            </View>
+          ) : (
+            rows.map((row) => (
+              <View key={row.id} style={styles.card}>
+                <View style={styles.cardTop}>
+                  <View style={styles.avatarCircle}>
+                    <Text style={styles.avatarText}>
+                      {(row.user?.full_name ?? row.user?.email ?? 'U').slice(0, 2).toUpperCase()}
                     </Text>
                   </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.name} numberOfLines={1}>{row.user?.full_name ?? row.user?.email ?? 'Unknown'}</Text>
+                    <Text style={styles.meta} numberOfLines={1}>{row.user?.email ?? '-'}</Text>
+                    <View style={styles.metaRow}>
+                      <View style={[styles.roleBadge, { backgroundColor: getRoleColor(row.role) + '18' }]}>
+                        <Text style={[styles.roleBadgeText, { color: getRoleColor(row.role) }]}>{row.role}</Text>
+                      </View>
+                      <View style={[styles.roleBadge, { backgroundColor: row.is_active ? COLORS.success + '18' : COLORS.error + '18' }]}>
+                        <Text style={[styles.roleBadgeText, { color: row.is_active ? COLORS.success : COLORS.error }]}>
+                          {row.is_active ? 'active' : 'inactive'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                  <View style={styles.cardActions}>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(row)}>
+                      <Ionicons name="create-outline" size={15} color={COLORS.info} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => deactivate(row)}>
+                      <Ionicons name="close-circle-outline" size={15} color={COLORS.error} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <Text style={styles.permText}>Perms: {row.permissions?.join(', ') || 'none'}</Text>
+
+                <View style={styles.notesRow}>
+                  <Ionicons name="shield-checkmark-outline" size={12} color={COLORS.textMuted} />
+                  <Text style={styles.notesText} numberOfLines={1}>Perms: {row.permissions?.join(', ') || 'none'}</Text>
+                </View>
               </View>
-              <View style={[styles.actionCol, isMobile && styles.actionColMobile]}>
-                <TouchableOpacity style={[styles.actionBtn, isMobile && styles.actionBtnMobile]} onPress={() => openEdit(row)}>
-                  <Ionicons name="create-outline" size={16} color={COLORS.info} />
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, isMobile && styles.actionBtnMobile]} onPress={() => deactivate(row)}>
-                  <Ionicons name="close-circle-outline" size={16} color={COLORS.error} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
-        )}
-      </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
 
       <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.overlay}>
@@ -582,166 +618,78 @@ export function StaffScreen() {
           </ScrollView>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  section: {
-    flex: 1,
-    padding: SPACING.xl,
-    backgroundColor: COLORS.background,
+  container: { flex: 1, backgroundColor: COLORS.background },
+
+  // Header
+  header: { padding: SPACING.md, paddingTop: SPACING.lg, paddingBottom: SPACING.sm },
+  headerTitle: { fontSize: FONTS.sizes.xl, fontWeight: '800', color: COLORS.text, marginBottom: 2 },
+  headerSubtitle: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary },
+  headerDate: { fontSize: FONTS.sizes.xs, color: COLORS.primary, fontWeight: '600', marginTop: SPACING.sm },
+
+  // Overview Card
+  overviewCard: { margin: SPACING.md, backgroundColor: COLORS.primary, borderRadius: RADIUS.xl, padding: SPACING.lg, flexDirection: 'row', justifyContent: 'space-between', ...SHADOWS.md },
+  overviewLeft: { flex: 1 },
+  overviewLabel: { color: 'rgba(255,255,255,0.8)', fontSize: FONTS.sizes.xs, fontWeight: '600', textTransform: 'uppercase', marginBottom: 4 },
+  overviewValue: { color: COLORS.white, fontSize: 32, fontWeight: '800', marginBottom: 4 },
+  overviewCount: { color: 'rgba(255,255,255,0.9)', fontSize: FONTS.sizes.sm, fontWeight: '500' },
+  overviewRight: { alignItems: 'flex-end', justifyContent: 'space-between', paddingLeft: SPACING.md },
+  circularFrame: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.white, paddingHorizontal: SPACING.md, paddingVertical: 8, borderRadius: RADIUS.full },
+  addBtnText: { color: COLORS.primary, fontSize: FONTS.sizes.sm, fontWeight: '700' },
+
+  // Insights
+  insightsWrap: { paddingHorizontal: SPACING.md, marginBottom: SPACING.md },
+  insightsTitle: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.sm },
+  insightsList: { gap: SPACING.xs },
+  insightCard: { backgroundColor: COLORS.surface, padding: SPACING.md, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: COLORS.border },
+  insightText: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary, lineHeight: 20 },
+
+  ledgerHeader: { fontSize: FONTS.sizes.md, fontWeight: '700', color: COLORS.text, marginLeft: SPACING.md, marginBottom: SPACING.sm },
+
+  listContainer: { flex: 1 },
+
+  // Empty
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING['2xl'], gap: SPACING.xs },
+  emptyIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.surfaceAlt, alignItems: 'center', justifyContent: 'center', marginBottom: SPACING.sm },
+  emptyTitle: { color: COLORS.text, fontSize: FONTS.sizes.base, fontWeight: '700' },
+  emptySub: { color: COLORS.textMuted, fontSize: FONTS.sizes.sm, textAlign: 'center', maxWidth: 340 },
+
+  // Card
+  card: {
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, padding: SPACING.md, marginHorizontal: SPACING.md, marginBottom: SPACING.sm, ...SHADOWS.sm,
   },
-  sectionMobile: {
-    padding: SPACING.base,
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  avatarCircle: {
+    width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.primary + '18',
+    alignItems: 'center', justifyContent: 'center',
   },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.base,
+  avatarText: { fontSize: FONTS.sizes.sm, fontWeight: '700', color: COLORS.primary },
+  name: { color: COLORS.text, fontSize: FONTS.sizes.sm, fontWeight: '700' },
+  meta: { marginTop: 2, color: COLORS.textSecondary, fontSize: FONTS.sizes.xs },
+  metaRow: { flexDirection: 'row', gap: SPACING.xs, marginTop: 4 },
+  roleBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.full },
+  roleBadgeText: { fontSize: 10, fontWeight: '700', textTransform: 'capitalize' },
+  cardActions: { flexDirection: 'row', gap: SPACING.xs },
+  iconBtn: {
+    width: 30, height: 30, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: COLORS.border,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surfaceAlt,
   },
-  headerRowMobile: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: SPACING.sm,
-  },
-  sectionTitle: {
-    fontSize: FONTS.sizes['2xl'],
-    fontWeight: '800',
-    color: COLORS.text,
-  },
-  sectionTitleMobile: {
-    fontSize: FONTS.sizes.xl,
-  },
-  sectionSubtitle: {
-    marginTop: 4,
-    color: COLORS.textSecondary,
-    fontSize: FONTS.sizes.sm,
-  },
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: SPACING.base,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary,
-    minHeight: 44,
-  },
-  addBtnMobile: {
-    width: '100%',
-    justifyContent: 'center',
-  },
-  addBtnText: {
-    color: COLORS.white,
-    fontSize: FONTS.sizes.sm,
-    fontWeight: '700',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginBottom: SPACING.base,
-  },
-  statsRowMobile: {
-    flexDirection: 'column',
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    padding: SPACING.base,
-  },
-  statValue: {
-    color: COLORS.text,
-    fontSize: FONTS.sizes['2xl'],
-    fontWeight: '800',
-  },
-  statLabel: {
-    color: COLORS.textSecondary,
-    fontSize: FONTS.sizes.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  formCard: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.base,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: COLORS.textMuted,
-    fontSize: FONTS.sizes.sm,
-    paddingVertical: SPACING.xl,
-  },
-  staffRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.surfaceAlt,
-    gap: SPACING.sm,
-  },
-  staffRowMobile: {
-    flexDirection: 'column',
-    gap: SPACING.xs,
-  },
-  staffName: {
-    color: COLORS.text,
-    fontSize: FONTS.sizes.sm,
-    fontWeight: '700',
-  },
-  staffEmail: {
-    color: COLORS.textSecondary,
-    fontSize: FONTS.sizes.xs,
-    marginTop: 2,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    gap: SPACING.xs,
-    marginTop: SPACING.xs,
-  },
-  roleBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-  },
-  roleBadgeText: {
-    fontSize: FONTS.sizes.xs,
-    textTransform: 'capitalize',
-    fontWeight: '700',
-  },
-  permText: {
-    marginTop: 6,
-    fontSize: FONTS.sizes.xs,
-    color: COLORS.textMuted,
-  },
-  actionCol: {
-    flexDirection: 'row',
-    gap: SPACING.xs,
-  },
-  actionColMobile: {
-    width: '100%',
-    justifyContent: 'flex-end',
-  },
-  actionBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: RADIUS.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceAlt,
-  },
-  actionBtnMobile: {
-    width: 44,
-    height: 44,
-  },
+  notesRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6, marginLeft: 54 },
+  notesText: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, fontStyle: 'italic', flex: 1 },
+
+  // For the non-admin state
+  section: { flex: 1, padding: SPACING.xl, backgroundColor: COLORS.background },
+  sectionMobile: { padding: SPACING.base },
+  sectionTitle: { fontSize: FONTS.sizes['2xl'], fontWeight: '800', color: COLORS.text },
+  formCard: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.lg, padding: SPACING.base, marginTop: SPACING.md },
+  emptyText: { textAlign: 'center', color: COLORS.textMuted, fontSize: FONTS.sizes.sm, paddingVertical: SPACING.xl },
+
+  // Modal styling (rest of the old styling from here on)
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',

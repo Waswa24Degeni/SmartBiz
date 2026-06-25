@@ -672,7 +672,7 @@ export function InvoicesScreen() {
               <View style={styles.modalSection}>
                 <Text style={styles.modalLabel}>Payment Method</Text>
                 <View style={styles.radioGroup}>
-                  {['cash', 'mobile_money', 'bank_card', 'cheque'].map((method) => (
+                  {['cash', 'mobile_money'].map((method) => (
                     <TouchableOpacity
                       key={method}
                       style={styles.radioOption}

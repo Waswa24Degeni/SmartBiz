@@ -5,7 +5,7 @@
 export type UserRole = 'owner' | 'staff' | 'admin';
 export type SubscriptionPlan = 'free' | 'starter' | 'business' | 'premium';
 export type OrderStatus = 'active' | 'completed' | 'cancelled' | 'refunded';
-export type PaymentMethod = 'cash' | 'mobile_money' | 'bank_card' | 'credit';
+export type PaymentMethod = 'cash' | 'mobile_money';
 export type PaymentStatus = 'pending' | 'paid' | 'partial' | 'overdue';
 
 export interface User {
@@ -103,6 +103,9 @@ export interface Sale {
   payment_status: PaymentStatus;
   payment_method: PaymentMethod;
   notes?: string;
+  tax?: number;
+  mobile_phone?: string;
+  payer_name?: string;
   created_at: string;
   updated_at: string;
   items?: SaleItem[];
@@ -151,8 +154,11 @@ export interface Notification {
 
 export interface DashboardStats {
   today_sales: number;
+  today_expenses: number;
+  today_profit: number;
   monthly_sales: number;
-  total_profit: number;
+  monthly_expenses: number;
+  net_profit: number;
   total_orders: number;
   new_customers: number;
   low_stock_count: number;
@@ -383,4 +389,49 @@ export interface WithdrawalRequest {
   created_at: string;
   updated_at: string;
   payout_method?: PayoutMethod;
+}
+
+// =====================================
+// Expense Types
+// =====================================
+
+export interface ExpenseCategory {
+  id: string;
+  business_id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Expense {
+  id: string;
+  business_id: string;
+  category_id?: string;
+  title: string;
+  amount: number;
+  description?: string;
+  receipt_url?: string;
+  expense_date: string;
+  supplier?: string;
+  payment_method?: PaymentMethod | string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+  category?: ExpenseCategory;
+}
+
+// =====================================
+// Activity Log Types
+// =====================================
+
+export interface ActivityLog {
+  id: string;
+  business_id: string;
+  user_id?: string;
+  action: string;
+  entity_type: string;
+  entity_id?: string;
+  details?: Record<string, any>;
+  created_at: string;
 }

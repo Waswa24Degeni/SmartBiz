@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Alert } from 'react-native';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
+import { Alert, AppState, AppStateStatus } from 'react-native';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
-import { clearStoredAuthSession, supabase } from '../lib/supabase';
+import { clearStoredAuthSession, supabase, getLastActivity, updateLastActivity } from '../lib/supabase';
 import { User, Business, Subscription } from '../types';
 
 interface AuthContextValue {
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return msg.includes('invalid refresh token') || msg.includes('refresh token not found');
   };
 
-  const recoverFromInvalidSession = async (reason?: unknown) => {
+  const recoverFromInvalidSession = async (reason?: unknown, showMessage = false) => {
     console.warn('[AuthContext] Recovering from invalid session token:', reason);
     try {
       await supabase.auth.signOut({ scope: 'local' });
@@ -55,13 +55,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSubscription(null);
     setProfileLoading(false);
     setLoading(false);
+
+    if (showMessage) {
+      Alert.alert('Session Expired', 'Your session has expired due to inactivity. Please sign in again.');
+    }
+  };
+
+  const checkInactivity = async (): Promise<boolean> => {
+    try {
+      const lastActivityStr = await getLastActivity();
+      if (lastActivityStr) {
+        const lastActivityDate = new Date(lastActivityStr);
+        const now = new Date();
+        const diffMs = now.getTime() - lastActivityDate.getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        if (diffDays > 30) {
+          await recoverFromInvalidSession('Inactivity timeout', true);
+          return true; // Session is invalid
+        }
+      }
+      // Valid session, update activity
+      await updateLastActivity();
+      return false;
+    } catch (e) {
+      console.warn('Failed to check inactivity', e);
+      return false;
+    }
   };
 
   useEffect(() => {
     supabase.auth.getSession()
-      .then(({ data: { session } }) => {
-        setSession(session);
+      .then(async ({ data: { session } }) => {
         if (session) {
+          const isInactive = await checkInactivity();
+          if (isInactive) return;
+
+          setSession(session);
           setProfileLoading(true);
           fetchUserProfile(session.user);
         } else {
@@ -104,7 +133,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    const appStateSubscription = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState === 'active' && session) {
+        await checkInactivity();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      appStateSubscription.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -229,7 +267,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const p = resolvedProfile!;
       if (p.role !== 'admin') {
         let resolvedBiz: Record<string, any> | null = null;
-        
+
         if (p.role === 'owner') {
           // Owners can have multiple businesses
           const { data: allBiz, error: allBizErr } = await supabase
@@ -248,7 +286,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (ownerBusinesses.length > 0) {
             resolvedBiz = ownerBusinesses.find(b => b.id === p.business_id) || ownerBusinesses[0];
             setBusiness(resolvedBiz as Business);
-            
+
             // Patch users.business_id if it's missing or out of sync
             if (!p.business_id || p.business_id !== resolvedBiz.id) {
               supabase.from('users')
@@ -353,14 +391,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .from('users')
       .update({ business_id: businessId })
       .eq('id', user.id);
-    
+
     if (error) {
       console.error('switchBusiness error:', error);
       Alert.alert('Error', 'Failed to switch shop.');
       setLoading(false);
       return;
     }
-    
+
     await refreshUser();
   };
 

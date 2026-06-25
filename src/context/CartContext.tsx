@@ -10,6 +10,7 @@ interface CartContextValue {
   clearCart: () => void;
   subtotal: number;
   totalDiscount: number;
+  tax: number;
   total: number;
   itemCount: number;
 }
@@ -55,11 +56,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const subtotal = items.reduce((sum, i) => sum + i.product.selling_price * i.quantity, 0);
   const totalDiscount = items.reduce((sum, i) => sum + i.discount * i.quantity, 0);
-  const total = subtotal - totalDiscount;
+  const taxRate = 0.18; // 18% VAT
+  const tax = (subtotal - totalDiscount) * taxRate;
+  const total = subtotal - totalDiscount + tax;
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items, addItem, removeItem, updateQuantity, applyDiscount, clearCart, subtotal, totalDiscount, total, itemCount }}>
+    <CartContext.Provider value={{ items, addItem, removeItem, updateQuantity, applyDiscount, clearCart, subtotal, totalDiscount, tax, total, itemCount }}>
       {children}
     </CartContext.Provider>
   );

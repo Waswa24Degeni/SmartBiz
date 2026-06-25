@@ -1,13 +1,14 @@
 import { Platform } from 'react-native';
 
 export const COLORS = {
-  primary: '#0D9488',        // Vibrant Teal
-  primaryLight: '#14B8A6',
-  primaryDark: '#0F766E',
-  accent: '#F59E0B',         // Warm Amber
-  accentLight: '#FBBF24',
-  accentDark: '#D97706',
-  background: '#F8FAFC',     // Slate-50 for a clean modern backdrop
+  primary: '#0165FC',        // Requested Primary (Blue)
+  primaryLight: '#3B82F6',
+  primaryDark: '#1D4ED8',
+  secondary: '#FFA500',      // Requested Secondary (Orange)
+  accent: '#006D77',         // Requested Accent (Deep Teal)
+  accentLight: '#2A9D8F',
+  accentDark: '#00535B',
+  background: '#F8FAFC',     // Requested Background (Slate-50)
   surface: '#FFFFFF',
   surfaceAlt: '#F1F5F9',     // Slate-100
   surfaceHover: '#F1F5F9',
@@ -16,11 +17,11 @@ export const COLORS = {
   textMuted: '#94A3B8',      // Slate-400
   border: '#E2E8F0',         // Slate-200
   borderLight: '#F1F5F9',    // Slate-100
-  success: '#10B981',        // Emerald-500
-  successLight: '#D1FAE5',
-  error: '#EF4444',          // Red-500
+  success: '#16A34A',        // Requested Success (Green-600)
+  successLight: '#DCFCE7',
+  error: '#DC2626',          // Requested Danger (Red-600)
   errorLight: '#FEE2E2',
-  warning: '#F59E0B',
+  warning: '#FFA500',        // Using secondary as warning
   warningLight: '#FEF3C7',
   info: '#3B82F6',           // Blue-500
   infoLight: '#DBEAFE',
@@ -123,11 +124,12 @@ export const SHADOWS = {
 
 /** Gradient color stops for expo-linear-gradient */
 export const GRADIENTS = {
-  primary:   ['#14B8A6', '#0D9488'] as const,
-  primaryV:  ['#0D9488', '#0F766E'] as const,
-  accent:    ['#FBBF24', '#F59E0B'] as const,
-  success:   ['#34D399', '#10B981'] as const,
-  error:     ['#F87171', '#EF4444'] as const,
+  primary:   ['#3B82F6', '#0165FC'] as const,
+  primaryV:  ['#0165FC', '#1D4ED8'] as const,
+  accent:    ['#2A9D8F', '#006D77'] as const,
+  secondary: ['#FBBF24', '#FFA500'] as const,
+  success:   ['#22C55E', '#16A34A'] as const,
+  error:     ['#EF4444', '#DC2626'] as const,
   info:      ['#60A5FA', '#3B82F6'] as const,
   surface:   ['#FFFFFF', '#F8FAFC'] as const,
 };

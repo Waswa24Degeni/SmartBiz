@@ -46,9 +46,10 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
     { label: 'Dashboard', icon: 'grid-outline',       route: 'Dashboard' },
     { label: 'Inventory', icon: 'cube-outline',       route: 'Inventory' },
     { label: 'POS',       icon: 'cart-outline',       route: 'POS' },
+    { label: 'Sales',     icon: 'receipt-outline',      route: 'Sales' },
+    { label: 'Bills',     icon: 'document-text-outline',route: 'Bills' },
     { label: 'Reports',   icon: 'bar-chart-outline',  route: 'Reports' },
     { label: 'Messages',  icon: 'chatbubble-outline', route: 'Messages' },
-    { label: 'Bills',     icon: 'receipt-outline',    route: 'Bills' },
     { label: 'Customers', icon: 'people-circle-outline', route: 'Customers' },
     { label: 'Staff',     icon: 'people-outline',     route: 'Staff' },
     { label: 'Settings',  icon: 'settings-outline',   route: 'Settings' },
@@ -72,35 +73,35 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
       Alert.alert('Error', 'Please enter a business name');
       return;
     }
-    
+
     setIsAddingShop(true);
     try {
       const { data: subs } = await supabase
         .from('subscriptions')
         .select('plan, status')
         .in('business_id', businesses.map(b => b.id));
-      
+
       let hasMultiBusinessPlan = false;
       if (subs) {
         hasMultiBusinessPlan = subs.some(s => s.status === 'active' && (s.plan === 'business' || s.plan === 'premium'));
       }
-      
+
       const limit = hasMultiBusinessPlan ? 2 : 1;
-      
+
       if (businesses.length >= limit) {
         Alert.alert('Limit Reached', `Your plan is limited to ${limit} business(es). Upgrade to add more.`);
         setIsAddingShop(false);
         return;
       }
-      
+
       const { data: newBiz, error: createErr } = await supabase
         .from('businesses')
         .insert({ name: newShopName.trim(), owner_id: user?.id })
         .select()
         .single();
-        
+
       if (createErr) throw createErr;
-      
+
       await switchBusiness(newBiz.id);
       setShowShopModal(false);
       setNewShopName('');
@@ -149,7 +150,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
   return (
     <View style={[styles.container, { paddingTop: insets.top + SPACING.sm }]}>
       {/* Logo / business header */}
-      <Pressable 
+      <Pressable
         style={[styles.logo, collapsed && styles.logoCollapsed]}
         onPress={() => user?.role === 'owner' && setShowShopModal(true)}
       >
@@ -269,7 +270,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
                 value={newShopName}
                 onChangeText={setNewShopName}
               />
-              <Pressable 
+              <Pressable
                 style={[styles.addShopBtn, isAddingShop && { opacity: 0.7 }]}
                 onPress={handleAddShop}
                 disabled={isAddingShop}

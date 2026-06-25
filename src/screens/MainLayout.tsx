@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, useWindowDimensions, Platform, DeviceEventEmitter } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Sidebar } from '../components/common/Sidebar';
 import { DashboardScreen } from './dashboard/DashboardScreen';
 import { CategoryItemsScreen } from './products/CategoryItemsScreen';
@@ -16,12 +17,15 @@ import { ReportsScreen } from './reports';
 import { StaffScreen } from './staff/StaffScreen';
 import { CustomersScreen } from './customers';
 import { WalletScreen } from './wallet/WalletScreen';
+import { ExpensesScreen } from './expenses/ExpensesScreen';
 import { NotificationsScreen } from './notifications/NotificationsScreen';
+import { SalesScreen } from './sales/SalesScreen';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GlobalSearch } from '../components/common/GlobalSearch';
 
-type Route = 'Dashboard' | 'Inventory' | 'POS' | 'Reports' | 'Messages' | 'Bills' | 'Customers' | 'Wallet' | 'Settings' | 'Notifications' | 'Support' | 'Staff';
+type Route = 'Dashboard' | 'Inventory' | 'POS' | 'Reports' | 'Messages' | 'Sales' | 'Bills' | 'Customers' | 'Wallet' | 'Settings' | 'Notifications' | 'Support' | 'Staff' | 'Expenses';
 
 const ROUTE_PERMISSIONS: Record<Route, string> = {
   Dashboard: 'dashboard',
@@ -30,22 +34,26 @@ const ROUTE_PERMISSIONS: Record<Route, string> = {
   Reports: 'reports',
   Messages: 'messages',
   Bills: 'bills',
+  Sales: 'bills',
   Customers: 'customers',
   Wallet: 'pos',        // cashiers + owners can view wallet
   Settings: 'settings',
   Notifications: 'dashboard',
   Support: 'support',
   Staff: 'staff_manage',
+  Expenses: 'reports',
 };
 
 const NAV_ITEMS: { label: string; icon: string; route: Route }[] = [
   { label: 'Dashboard', icon: 'grid-outline',        route: 'Dashboard' },
   { label: 'Inventory', icon: 'cube-outline',         route: 'Inventory' },
   { label: 'POS',       icon: 'cart-outline',         route: 'POS' },
+  { label: 'Sales',     icon: 'receipt-outline',      route: 'Sales' },
+  { label: 'Bills',     icon: 'document-text-outline',route: 'Bills' },
   { label: 'Reports',   icon: 'bar-chart-outline',    route: 'Reports' },
   { label: 'Wallet',    icon: 'wallet-outline',       route: 'Wallet' },
   { label: 'Messages',  icon: 'chatbubble-outline',   route: 'Messages' },
-  { label: 'Bills',     icon: 'receipt-outline',      route: 'Bills' },
+  { label: 'Expenses',  icon: 'cash-outline',         route: 'Expenses' },
   { label: 'Customers', icon: 'people-circle-outline',route: 'Customers' },
   { label: 'Staff',     icon: 'people-outline',       route: 'Staff' },
   { label: 'Settings',  icon: 'settings-outline',     route: 'Settings' },
@@ -62,7 +70,9 @@ export function MainLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [staffPerms, setStaffPerms] = useState<string[] | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [openOrders, setOpenOrders] = useState(0);
+  const [searchVisible, setSearchVisible] = useState(false);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
@@ -114,16 +124,24 @@ export function MainLayout() {
   const refreshBadges = React.useCallback(async () => {
     if (!business?.id || !user?.id) {
       setUnreadNotifications(0);
+      setUnreadMessages(0);
       setOpenOrders(0);
       return;
     }
 
-    const [notifRes, ordersRes] = await Promise.all([
+    const [notifRes, msgRes, ordersRes] = await Promise.all([
       supabase
         .from('notifications')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
-        .eq('is_read', false),
+        .eq('is_read', false)
+        .neq('type', 'message'),
+      supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('is_read', false)
+        .eq('type', 'message'),
       supabase
         .from('sales')
         .select('id', { count: 'exact', head: true })
@@ -132,6 +150,7 @@ export function MainLayout() {
     ]);
 
     if (!notifRes.error) setUnreadNotifications(notifRes.count ?? 0);
+    if (!msgRes.error) setUnreadMessages(msgRes.count ?? 0);
     if (!ordersRes.error) setOpenOrders(ordersRes.count ?? 0);
   }, [business?.id, user?.id]);
 
@@ -177,7 +196,11 @@ export function MainLayout() {
     .filter((item) => hasAccess(item.route))
     .map((item) => ({
       ...item,
-      badge: item.route === 'Bills' && openOrders > 0 ? openOrders : undefined,
+      badge: item.route === 'Bills' && openOrders > 0
+        ? openOrders
+        : item.route === 'Messages' && unreadMessages > 0
+          ? unreadMessages
+          : undefined,
     }));
 
   React.useEffect(() => {
@@ -214,6 +237,15 @@ export function MainLayout() {
     setDrawerOpen(false);
   };
 
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener('switch_route', (targetRoute: Route) => {
+      handleNavigate(targetRoute);
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [handleNavigate]);
+
   const handleInventoryAddToOrder = (product: Product) => {
     if (!hasAccess('Bills')) return;
     setBillPrefillProduct(product);
@@ -226,7 +258,7 @@ export function MainLayout() {
 
   const renderContent = () => {
     if (!isRouteLoaded) return null;
-    
+
     if (!hasAccess(route)) {
       return <NoAccessScreen />;
     }
@@ -244,6 +276,8 @@ export function MainLayout() {
         );
       case 'Bills':
         return <BillsScreen prefillProduct={billPrefillProduct} prefillNonce={billPrefillNonce} />;
+      case 'Sales':
+        return <SalesScreen />;
       case 'POS':
         return <POSScreen />;
       case 'Reports':
@@ -262,6 +296,8 @@ export function MainLayout() {
         return <SupportScreen />;
       case 'Staff':
         return <StaffScreen />;
+      case 'Expenses':
+        return <ExpensesScreen />;
       default:
         return <DashboardScreen />;
     }
@@ -305,6 +341,7 @@ export function MainLayout() {
           onMenuPress={isMobile ? () => setDrawerOpen(true) : undefined}
           onNotificationsPress={() => setRoute('Notifications')}
           onActivityPress={() => setRoute('Bills')}
+          onSearchPress={() => setSearchVisible(true)}
           notificationsBadge={unreadNotifications}
           activityBadge={openOrders}
           rightActions={!isMobile ? (
@@ -320,6 +357,11 @@ export function MainLayout() {
           {renderContent()}
         </View>
       </View>
+      <GlobalSearch
+        visible={searchVisible}
+        onClose={() => setSearchVisible(false)}
+        onNavigate={handleNavigate}
+      />
     </View>
   );
 }

@@ -1,4 +1,4 @@
--- Migration for SmartBiz TZ Premium Features
+-- Migration for SmartEnterprise TZ Premium Features
 -- Run this in the Supabase SQL Editor
 
 -- 1. Create missing tables if they don't exist
@@ -221,7 +221,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(use
 CREATE INDEX IF NOT EXISTS idx_activity_logs_business_id ON public.activity_logs(business_id);
 
 -- ============================================================
--- SmartBiz TZ — Notification Auto-Generation Triggers
+-- SmartEnterprise TZ — Notification Auto-Generation Triggers
 -- ============================================================
 
 -- Helper: insert a notification for the business owner

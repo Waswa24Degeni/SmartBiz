@@ -102,7 +102,7 @@ export function ExpensesScreen() {
 
   const loadBudget = async () => {
     try {
-      const saved = await AsyncStorage.getItem('smartbiz_expense_budget');
+      const saved = await AsyncStorage.getItem('smartenterprise_expense_budget');
       if (saved) {
         setBudget(parseFloat(saved));
       }
@@ -118,7 +118,7 @@ export function ExpensesScreen() {
       return;
     }
     try {
-      await AsyncStorage.setItem('smartbiz_expense_budget', String(val));
+      await AsyncStorage.setItem('smartenterprise_expense_budget', String(val));
       setBudget(val);
       setBudgetEditorVisible(false);
     } catch (e) {
@@ -692,7 +692,7 @@ export function ExpensesScreen() {
         expenses={filtered}
         categories={categories}
         currency={currency}
-        businessName={business?.name || 'SmartBiz'}
+        businessName={business?.name || 'SmartEnterprise'}
         businessLogoUrl={business?.logo_url}
         budget={budget}
       />

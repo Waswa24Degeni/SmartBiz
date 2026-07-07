@@ -1,6 +1,6 @@
-# SmartBiz TZ
+# SmartEnterprise TZ
 
-SmartBiz is a mobile-first business operating system for small and medium businesses in Tanzania and East Africa.
+SmartEnterprise is a mobile-first business operating system for small and medium businesses in Tanzania and East Africa.
 
 It helps owners run daily operations across POS, inventory, billing, invoicing, reporting, staff, wallet tracking, internal messaging, and owner-admin support from one application.
 
@@ -15,7 +15,7 @@ Many businesses in the region still struggle with:
 - customer and supplier tracking gaps that cause leakage and disputes
 - support delays when business owners need direct platform help
 
-SmartBiz addresses these issues with a single system built for local realities:
+SmartEnterprise addresses these issues with a single system built for local realities:
 
 - fast mobile workflows for shop, restaurant, and service businesses
 - role-based access for owner, staff, and admin operations
@@ -23,7 +23,7 @@ SmartBiz addresses these issues with a single system built for local realities:
 - printable reports and downloadable Excel-compatible exports
 - owner-admin support channel separate from internal staff messaging
 
-## What SmartBiz Does Today
+## What SmartEnterprise Does Today
 
 ### Core Business Modules
 
@@ -112,7 +112,7 @@ npm run web
 ## Current Project Structure
 
 ```text
-smartbiz-tz/
+smartenterprise-tz/
 	src/
 		components/
 		context/
@@ -161,7 +161,7 @@ smartbiz-tz/
 
 ## Regional Impact Goals
 
-SmartBiz is designed to help East African SMEs:
+SmartEnterprise is designed to help East African SMEs:
 
 - reduce daily reconciliation time
 - improve inventory and cash accountability

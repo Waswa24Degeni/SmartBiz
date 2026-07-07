@@ -53,31 +53,31 @@ export const CustomerReportScreen = ({
         </View>
       </Animated.View>
 
-      {/* Detailed Customer Spending Table */}
+      {/* Top Customers List */}
       <View style={styles.tableCard}>
-        <Text style={styles.tableCardTitle}>Top Spenders Ledger</Text>
-        <View style={styles.tableContainer}>
-          <View style={styles.tableHeaderRow}>
-            <Text style={[styles.thText, { flex: 1.2 }]}>Customer Name</Text>
-            <Text style={[styles.thText, { flex: 1 }]}>Phone</Text>
-            <Text style={[styles.thText, { flex: 0.6, textAlign: 'center' }]}>Orders</Text>
-            <Text style={[styles.thText, { flex: 1.2, textAlign: 'right' }]}>Total Spending</Text>
-            <Text style={[styles.thText, { flex: 1, textAlign: 'right' }]}>Last Purchase</Text>
-          </View>
-          {customerMetrics.sortedCustomerSales.length === 0 ? (
-            <Text style={styles.noDataRow}>No registered customer sales logged</Text>
-          ) : (
-            customerMetrics.sortedCustomerSales.map((c, i) => (
-              <View key={i} style={styles.tableDataRow}>
-                <Text style={[styles.tdText, styles.tdOrderNum, { flex: 1.2 }]}>{c.name}</Text>
-                <Text style={[styles.tdText, { flex: 1 }]}>{c.phone}</Text>
-                <Text style={[styles.tdText, { flex: 0.6, textAlign: 'center' }]}>{c.orders}</Text>
-                <Text style={[styles.tdText, styles.tdAmount, { flex: 1.2, textAlign: 'right' }]}>{fmtCurrency(c.spend)}</Text>
-                <Text style={[styles.tdText, { flex: 1, textAlign: 'right', color: '#94A3B8' }]}>{c.lastPurchase}</Text>
+        <Text style={styles.tableCardTitle}>Top Spenders</Text>
+        {customerMetrics.sortedCustomerSales.length === 0 ? (
+          <Text style={styles.noDataRow}>No registered customer sales logged</Text>
+        ) : (
+          customerMetrics.sortedCustomerSales.map((c, i) => (
+            <View key={i} style={styles.listItemRow}>
+              <View style={styles.listItemLeft}>
+                <View style={styles.rankBadge}>
+                  <Text style={styles.rankText}>#{i + 1}</Text>
+                </View>
+                <View style={styles.customerInfo}>
+                  <Text style={styles.listItemName}>{c.name}</Text>
+                  <Text style={styles.listItemSubtext}>{c.phone} • {c.orders} orders</Text>
+                  <Text style={styles.lastPurchase}>Last: {c.lastPurchase}</Text>
+                </View>
               </View>
-            ))
-          )}
-        </View>
+              <View style={styles.listItemRight}>
+                <Text style={styles.listItemVal}>{fmtCurrency(c.spend)}</Text>
+                <Text style={styles.listItemSubVal}>Total Spend</Text>
+              </View>
+            </View>
+          ))
+        )}
 
         {/* Action buttons inside the card */}
         <View style={styles.cardActionsRow}>
@@ -97,16 +97,16 @@ export const CustomerReportScreen = ({
 
 const styles = StyleSheet.create({
   tabContent: {
-    gap: SPACING.md,
+    gap: SPACING.sm,
   },
   reportMainCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: SPACING.lg,
+    borderRadius: 20,
+    padding: SPACING.md,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 2,
   },
   sectionTitle: {
@@ -137,26 +137,84 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   kpiValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: '#111827',
-    marginTop: 4,
+    marginTop: 2,
   },
   tableCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: SPACING.md,
+    borderRadius: 20,
+    padding: SPACING.sm,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 2,
   },
   tableCardTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: '#111827',
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  listItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: SPACING.sm,
+  },
+  listItemLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  rankBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0165FC',
+  },
+  customerInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  listItemName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  listItemSubtext: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  lastPurchase: {
+    fontSize: 10,
+    color: '#94A3B8',
+  },
+  listItemRight: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  listItemVal: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  listItemSubVal: {
+    fontSize: 9,
+    color: '#6B7280',
+    textTransform: 'uppercase',
   },
   tableContainer: {
     flexDirection: 'column',

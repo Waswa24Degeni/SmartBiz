@@ -57,7 +57,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const subtotal = items.reduce((sum, i) => sum + i.product.selling_price * i.quantity, 0);
   const totalDiscount = items.reduce((sum, i) => sum + i.discount * i.quantity, 0);
   const taxRate = 0.18; // 18% VAT
-  const tax = (subtotal - totalDiscount) * taxRate;
+  const tax = items.reduce((acc, item) => {
+    // Only apply tax if the product has explicitly been marked as taxable
+    if ((item.product as any).has_tax) {
+      return acc + ((item.product.selling_price * item.quantity) - item.discount) * taxRate;
+    }
+    return acc;
+  }, 0);
   const total = subtotal - totalDiscount + tax;
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 

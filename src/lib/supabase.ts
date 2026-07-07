@@ -35,7 +35,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export const SESSION_ACTIVITY_KEY = 'smartbiz_last_activity';
+export const SESSION_ACTIVITY_KEY = 'smartenterprise_last_activity';
 
 export async function updateLastActivity(): Promise<void> {
   const now = new Date().toISOString();

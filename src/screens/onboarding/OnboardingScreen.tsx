@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, TextInput,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -10,6 +10,7 @@ import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { COLORS, SPACING, FONTS, RADIUS } from '../../lib/constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSubscriptionPlans } from '../../lib/hooks';
 
 const CATEGORIES: { label: string; icon: string }[] = [
   { label: 'Pharmacy',           icon: 'medkit-outline' },
@@ -28,14 +29,12 @@ const CURRENCIES: { code: string; flag: string; name: string }[] = [
   { code: 'GBP', flag: 'UK',        name: 'British Pound' },
 ];
 
-const PLANS: { id: string; name: string; priceLabel: string; numericPrice: number; color: string; icon: string; features: string[] }[] = [
-  { id: 'free',     name: 'Free',     priceLabel: 'TZS 0',        numericPrice: 0,     color: '#6B7280', icon: 'gift-outline',     features: ['1 user', '100 products', 'Basic reports'] },
-  { id: 'starter',  name: 'Starter',  priceLabel: 'TZS 15,000',  numericPrice: 15000, color: '#3B82F6', icon: 'rocket-outline',   features: ['3 users', '500 products', 'Advanced reports'] },
-  { id: 'business', name: 'Business', priceLabel: 'TZS 35,000',  numericPrice: 35000, color: '#C49A2A', icon: 'briefcase-outline', features: ['10 users', 'Unlimited products', 'Priority support'] },
-  { id: 'premium',  name: 'Premium',  priceLabel: 'TZS 80,000',  numericPrice: 80000, color: '#0D9488', icon: 'diamond-outline',   features: ['Unlimited users', 'API access', 'Dedicated manager'] },
-];
-
-const MOBILE_MONEY_MIN_AMOUNT = 500;
+const PLAN_ICONS: Record<string, string> = {
+  free: 'gift-outline',
+  starter: 'rocket-outline',
+  business: 'briefcase-outline',
+  premium: 'diamond-outline',
+};
 
 function normalizeTzPhone(raw: string): string {
   const digits = raw.replace(/\D/g, '');
@@ -49,84 +48,77 @@ function isValidTzPhone(raw: string): boolean {
   return /^255\d{9}$/.test(normalizeTzPhone(raw));
 }
 
-function hasLetter(raw: string): boolean {
-  return /[A-Za-z]/.test(raw);
-}
-
-function isValidBusinessName(raw: string): boolean {
-  const v = raw.trim();
-  return v.length >= 3 && v.length <= 100 && hasLetter(v);
-}
-
-type Step = 'profile' | 'category' | 'currency' | 'plan' | 'payment';
+type Step = 'plan' | 'payment' | 'profile' | 'category' | 'currency';
 
 export function OnboardingScreen() {
-  const { user, session, refreshUser, signOut } = useAuth();
+  const { user, session, business, subscription, refreshUser, signOut } = useAuth();
   const insets = useSafeAreaInsets();
-  const [step, setStep] = useState<Step>('profile');
-  const [businessName, setBusinessName] = useState(session?.user?.user_metadata?.business_name || '');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
-  const [category, setCategory] = useState('');
+  const { plans: PLANS, loading: plansLoading } = useSubscriptionPlans();
+  
+  // If they already have a business created, they are in the setup phase.
+  const [step, setStep] = useState<Step>(business ? 'profile' : 'plan');
+  
+  // Setup fields
+  const [businessName, setBusinessName] = useState(business?.name || session?.user?.user_metadata?.business_name || '');
+  const [phone, setPhone] = useState(business?.phone || '');
+  const [address, setAddress] = useState(business?.address || '');
+  const [category, setCategory] = useState(business?.category === 'SETUP_PENDING' ? '' : (business?.category || ''));
   const [customCategory, setCustomCategory] = useState('');
-  const [currency, setCurrency] = useState('TZS');
+  const [currency, setCurrency] = useState(business?.currency || 'TZS');
+  
+  // Plan/Payment fields
   const [selectedPlanId, setSelectedPlanId] = useState('free');
   const [payerPhone, setPayerPhone] = useState('');
   const [payPhoneError, setPayPhoneError] = useState('');
-  const [payStep, setPayStep] = useState<'idle' | 'paying' | 'done'>('idle');
   const [loading, setLoading] = useState(false);
 
-  const isPaidPlan = selectedPlanId !== 'free';
-  const STEPS: Step[] = isPaidPlan
-    ? ['profile', 'category', 'currency', 'plan', 'payment']
-    : ['profile', 'category', 'currency', 'plan'];
+  // Re-sync step if auth state changes externally (e.g. after payment pending resolves)
+  useEffect(() => {
+    if (business && subscription?.status === 'active' && (step === 'plan' || step === 'payment')) {
+      setStep('profile');
+    }
+  }, [business, subscription, step]);
+
+  const STEPS: Step[] = business 
+    ? ['profile', 'category', 'currency']
+    : (selectedPlanId === 'free' ? ['plan', 'profile', 'category', 'currency'] : ['plan', 'payment', 'profile', 'category', 'currency']);
+    
   const stepIndex = STEPS.indexOf(step);
 
-  // ── Free plan: create business + active subscription ────
-  const handleFinish = async () => {
-    if (!businessName.trim()) {
-      Alert.alert('Required', 'Business name is required');
-      return;
-    }
-    if (!isValidBusinessName(businessName)) {
-      Alert.alert('Invalid business name', 'Business name must be 3-100 characters and include letters.');
-      return;
-    }
-    const cleanBusinessName = businessName.trim();
+  // ── Plan Step ──────────────────────────────────────────────
+  const handlePlanNext = async () => {
+    const cleanBusinessName = businessName.trim() || 'My Business';
     setLoading(true);
     try {
-      const effectiveCategory = category === 'Other'
-        ? (customCategory.trim() || 'Other')
-        : category;
+      if (selectedPlanId === 'free') {
+        const { data: biz, error } = await supabase
+          .from('businesses')
+          .insert({
+            name: cleanBusinessName,
+            category: 'SETUP_PENDING',
+            owner_id: user!.id,
+            is_verified: false,
+          })
+          .select()
+          .single();
 
-      const { data: biz, error } = await supabase
-        .from('businesses')
-        .insert({
-          name: cleanBusinessName,
-          category: effectiveCategory,
-          owner_id: user!.id,
-          phone,
-          address,
-          currency,
-          is_verified: false,
-        })
-        .select()
-        .single();
+        if (error) throw error;
+        const { error: userErr } = await supabase.from('users').update({ business_id: biz.id }).eq('id', user!.id);
+        if (userErr) throw userErr;
 
-      if (error) throw error;
+        await supabase.from('subscriptions').insert({
+          business_id: biz.id,
+          plan: 'free',
+          status: 'active',
+          starts_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          billing_cycle: 'monthly',
+        });
 
-      await supabase.from('users').update({ business_id: biz.id }).eq('id', user!.id);
-
-      await supabase.from('subscriptions').insert({
-        business_id: biz.id,
-        plan: 'free',
-        status: 'active',
-        starts_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        billing_cycle: 'monthly',
-      });
-
-      await refreshUser();
+        await refreshUser();
+      } else {
+        setStep('payment');
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -134,67 +126,35 @@ export function OnboardingScreen() {
     }
   };
 
-  // ── Plan step: free → handleFinish, paid → payment step ─
-  const handlePlanNext = () => {
-    if (!isPaidPlan) {
-      handleFinish();
-    } else {
-      setPayerPhone(phone); // pre-fill from profile phone
-      setStep('payment');
-    }
-  };
-
-  // ── Paid plan: create business + initiate Snippe payment ─
+  // ── Payment Step ───────────────────────────────────────────
   const handleInitiatePay = async () => {
     const normalized = normalizeTzPhone(payerPhone);
     if (!isValidTzPhone(normalized)) {
       setPayPhoneError('Enter a valid mobile money number (e.g. 0712345678)');
       return;
     }
-    if (!businessName.trim()) {
-      Alert.alert('Required', 'Business name is required. Go back to step 1.');
-      return;
-    }
-    if (!isValidBusinessName(businessName)) {
-      Alert.alert('Invalid business name', 'Business name must be 3-100 characters and include letters.');
-      return;
-    }
-    const cleanBusinessName = businessName.trim();
     setPayPhoneError('');
-    setPayStep('paying');
+    setLoading(true);
 
     try {
-      const effectiveCategory = category === 'Other'
-        ? (customCategory.trim() || 'Other')
-        : category;
-
+      const cleanBusinessName = businessName.trim() || 'My Business';
       const { data: biz, error: bizErr } = await supabase
         .from('businesses')
         .insert({
           name: cleanBusinessName,
-          category: effectiveCategory,
+          category: 'SETUP_PENDING',
           owner_id: user!.id,
-          phone,
-          address,
-          currency,
           is_verified: false,
         })
         .select()
         .single();
 
       if (bizErr) throw bizErr;
-
-      await supabase.from('users').update({ business_id: biz.id }).eq('id', user!.id);
+      const { error: userErr } = await supabase.from('users').update({ business_id: biz.id }).eq('id', user!.id);
+      if (userErr) throw userErr;
 
       const selectedPlan = PLANS.find(p => p.id === selectedPlanId)!;
-      if (selectedPlan.numericPrice < MOBILE_MONEY_MIN_AMOUNT) {
-        throw new Error(`Selected plan amount is below mobile money minimum of TZS ${MOBILE_MONEY_MIN_AMOUNT.toLocaleString()}.`);
-      }
-
       const payerName = user?.full_name?.trim() || 'Customer';
-      if (payerName.length < 3 || payerName.length > 80) {
-        throw new Error('Payer name must be between 3 and 80 characters.');
-      }
 
       const { data: payResult, error: payErr } = await supabase.functions.invoke(
         'initiate-payment',
@@ -202,27 +162,24 @@ export function OnboardingScreen() {
           body: {
             payment_type:    'subscription',
             channel:         'mobile',
-            amount:          selectedPlan.numericPrice,
+            amount:          selectedPlan.price,
             business_id:     biz.id,
-            idempotency_key: generateIdempotencyKey('onb'),
+            idempotency_key: generateIdempotencyKey('sub'),
             payer_phone:     normalized,
             payer_name:      payerName,
-            metadata: { plan: selectedPlanId },
+            payer_email:     user?.email,
+            metadata:        { plan: selectedPlanId },
           },
         },
       );
 
       if (payErr || !(payResult as any)?.success) {
-        Alert.alert(
-          'Payment Failed',
-          (payResult as any)?.message ?? payErr?.message ?? 'Could not initiate payment.',
-        );
-        setPayStep('idle');
+        Alert.alert('Payment Failed', (payResult as any)?.message ?? payErr?.message ?? 'Could not initiate payment.');
+        setLoading(false);
         return;
       }
 
       const pid = (payResult as any).payment_id ?? null;
-
       const now = new Date();
       const expiresAt = new Date(now);
       expiresAt.setMonth(expiresAt.getMonth() + 1);
@@ -244,37 +201,141 @@ export function OnboardingScreen() {
         await supabase.from('payments').update({ subscription_id: sub.id }).eq('id', pid);
       }
 
-      setPayStep('done');
+      await refreshUser();
     } catch (e: any) {
-      setPayStep('idle');
+      setLoading(false);
       Alert.alert('Error', e?.message ?? 'Something went wrong.');
     }
   };
 
+  // ── Setup Steps ────────────────────────────────────────────
+  const handleFinishSetup = async () => {
+    if (!business) return;
+    setLoading(true);
+    try {
+      const effectiveCategory = category === 'Other'
+        ? (customCategory.trim() || 'Other')
+        : category;
+
+      const { error } = await supabase
+        .from('businesses')
+        .update({
+          name: businessName.trim(),
+          phone,
+          address,
+          category: effectiveCategory,
+          currency,
+        })
+        .eq('id', business.id);
+
+      if (error) throw error;
+      await refreshUser();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Render Helpers ─────────────────────────────────────────
+  const handleBack = () => {
+    if (stepIndex > 0) {
+      setStep(STEPS[stepIndex - 1]);
+    } else {
+      signOut();
+    }
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Progress */}
       <View style={styles.progressWrap}>
-        <TouchableOpacity onPress={() => stepIndex > 0 ? setStep(STEPS[stepIndex - 1]) : signOut()}>
+        <TouchableOpacity onPress={handleBack}>
           <Ionicons name="arrow-back" size={24} color={COLORS.text} />
         </TouchableOpacity>
         <View style={styles.steps}>
           {STEPS.map((s, i) => (
-            <View
-              key={s}
-              style={[styles.stepDot, i <= stepIndex && styles.stepDotActive]}
-            />
+            <View key={s} style={[styles.stepDot, i <= stepIndex && styles.stepDotActive]} />
           ))}
         </View>
         <Text style={styles.stepCount}>{stepIndex + 1}/{STEPS.length}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
+        {step === 'plan' && (
+          <View>
+            <Text style={styles.stepTitle}>Choose your plan</Text>
+            <Text style={styles.stepSubtitle}>Select a plan to start your business</Text>
+
+            {plansLoading ? <Text style={styles.stepSubtitle}>Loading plans...</Text> : PLANS.map(plan => {
+              const selected = selectedPlanId === plan.id;
+              const iconName = PLAN_ICONS[plan.id] || 'star-outline';
+              return (
+                <TouchableOpacity
+                  key={plan.id}
+                  style={[styles.planCard, { borderLeftColor: plan.color }, selected && styles.planCardSelected]}
+                  onPress={() => setSelectedPlanId(plan.id)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.planIconWrap, { backgroundColor: (plan as any).color + '20' }]}>
+                    <Ionicons name={iconName as any} size={22} color={plan.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.planName}>{plan.name}</Text>
+                    <Text style={styles.planPrice}>{plan.price === 0 ? 'Free' : `TZS ${plan.price.toLocaleString()}/mo`}</Text>
+                    {plan.features.map((feature: string) => (
+                       <View key={feature} style={{flexDirection: 'row', alignItems: 'center', marginTop: 2}}>
+                         <Ionicons name="checkmark-circle" size={12} color={COLORS.success} style={{marginRight: 4}} />
+                         <Text style={styles.planFeatures}>{feature}</Text>
+                       </View>
+                    ))}
+                  </View>
+                  {selected && <Ionicons name="checkmark-circle" size={22} color={plan.color} />}
+                </TouchableOpacity>
+              );
+            })}
+
+            <Button
+              title="Continue →"
+              onPress={handlePlanNext}
+              loading={loading}
+              fullWidth
+              size="lg"
+              style={{ marginTop: 16 }}
+            />
+          </View>
+        )}
+
+        {step === 'payment' && (
+          <View>
+            <Text style={styles.stepTitle}>Complete Payment</Text>
+            <Text style={styles.stepSubtitle}>
+              Pay {PLANS.find(p => p.id === selectedPlanId)?.price === 0 ? 'TZS 0' : `TZS ${PLANS.find(p => p.id === selectedPlanId)?.price?.toLocaleString()}`} via mobile money to activate your plan
+            </Text>
+            <Input
+              label="Mobile Money Number"
+              placeholder="0712 345 678"
+              value={payerPhone}
+              onChangeText={v => { setPayerPhone(v); setPayPhoneError(''); }}
+              keyboardType="phone-pad"
+              leftIcon="phone-portrait-outline"
+              error={payPhoneError}
+            />
+            <Button
+              title="Pay Now"
+              onPress={handleInitiatePay}
+              loading={loading}
+              fullWidth size="lg"
+              style={{ marginTop: SPACING.sm }}
+            />
+          </View>
+        )}
+
         {step === 'profile' && (
           <View>
-            <Text style={styles.stepTitle}>Set up your business</Text>
-            <Text style={styles.stepSubtitle}>Tell us about your business</Text>
+            <Text style={styles.stepTitle}>Business details</Text>
+            <Text style={styles.stepSubtitle}>Confirm your business profile</Text>
             <Input
               label="Business Name *"
               placeholder="e.g. Mama's Restaurant"
@@ -353,7 +414,7 @@ export function OnboardingScreen() {
                 />
               </View>
             )}
-            <Button title="Continue" onPress={() => setStep('currency')} fullWidth size="lg" />
+            <Button title="Continue" onPress={() => setStep('currency')} fullWidth size="lg" disabled={!category} />
           </View>
         )}
 
@@ -377,117 +438,17 @@ export function OnboardingScreen() {
                 {currency === c.code && <Ionicons name="checkmark-circle" size={22} color={COLORS.accent} />}
               </TouchableOpacity>
             ))}
-            <Button title="Continue" onPress={() => setStep('plan')} fullWidth size="lg" style={{ marginTop: 16 }} />
-          </View>
-        )}
-
-        {step === 'plan' && (
-          <View>
-            <Text style={styles.stepTitle}>Choose your plan</Text>
-            <Text style={styles.stepSubtitle}>Free plan included — upgrade anytime</Text>
-
-            {PLANS.map(plan => {
-              const selected = selectedPlanId === plan.id;
-              return (
-                <TouchableOpacity
-                  key={plan.id}
-                  style={[styles.planCard, { borderLeftColor: plan.color }, selected && styles.planCardSelected]}
-                  onPress={() => setSelectedPlanId(plan.id)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.planIconWrap, { backgroundColor: plan.color + '20' }]}>
-                    <Ionicons name={plan.icon as any} size={22} color={plan.color} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.planName}>{plan.name}</Text>
-                    <Text style={styles.planPrice}>{plan.priceLabel}{plan.numericPrice > 0 ? '/mo' : ''}</Text>
-                    <Text style={styles.planFeatures}>{plan.features.join(' · ')}</Text>
-                  </View>
-                  {selected && (
-                    <Ionicons name="checkmark-circle" size={22} color={plan.color} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-
-            {isPaidPlan && (
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.xs,
-                backgroundColor: '#EFF6FF', borderRadius: RADIUS.md, padding: SPACING.sm, marginTop: SPACING.sm }}>
-                <Ionicons name="phone-portrait-outline" size={16} color={COLORS.info} style={{ marginTop: 2 }} />
-                <Text style={{ flex: 1, fontSize: FONTS.sizes.xs, color: COLORS.info }}>
-                  Payment via mobile money (USSD push). You will be prompted to enter your PIN.
-                </Text>
-              </View>
-            )}
-
-            <Button
-              title={isPaidPlan ? `Pay ${PLANS.find(p => p.id === selectedPlanId)?.priceLabel} →` : 'Get Started →'}
-              onPress={handlePlanNext}
-              loading={loading && !isPaidPlan}
-              fullWidth
-              size="lg"
-              style={{ marginTop: 16 }}
+            <Button 
+              title="Complete Setup" 
+              onPress={handleFinishSetup} 
+              loading={loading}
+              fullWidth 
+              size="lg" 
+              style={{ marginTop: 16 }} 
             />
           </View>
         )}
 
-        {step === 'payment' && (
-          <View>
-            {payStep === 'done' ? (
-              <View style={{ alignItems: 'center' }}>
-                <Ionicons name="checkmark-circle" size={64} color={COLORS.success} style={{ marginBottom: SPACING.md }} />
-                <Text style={[styles.stepTitle, { textAlign: 'center' }]}>USSD Push Sent!</Text>
-                <Text style={[styles.stepSubtitle, { textAlign: 'center' }]}>
-                  Check your phone and enter your mobile money PIN to activate your{' '}
-                  {PLANS.find(p => p.id === selectedPlanId)?.name} plan.
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.xs,
-                  backgroundColor: '#F0FDF4', borderRadius: RADIUS.md, padding: SPACING.md,
-                  marginBottom: SPACING.xl, borderWidth: 1, borderColor: COLORS.success + '40' }}>
-                  <Ionicons name="information-circle-outline" size={16} color={COLORS.success} style={{ marginTop: 2 }} />
-                  <Text style={{ flex: 1, fontSize: FONTS.sizes.sm, color: COLORS.success }}>
-                    Your dashboard will unlock automatically once payment is confirmed by the system.
-                  </Text>
-                </View>
-                <Button
-                  title="Check Payment Status"
-                  onPress={refreshUser}
-                  fullWidth size="lg"
-                />
-              </View>
-            ) : (
-              <View>
-                <Text style={styles.stepTitle}>Complete Payment</Text>
-                <Text style={styles.stepSubtitle}>
-                  Pay {PLANS.find(p => p.id === selectedPlanId)?.priceLabel} via mobile money to activate your plan
-                </Text>
-                <Input
-                  label="Mobile Money Number"
-                  placeholder="0712 345 678"
-                  value={payerPhone}
-                  onChangeText={v => { setPayerPhone(v); setPayPhoneError(''); }}
-                  keyboardType="phone-pad"
-                  leftIcon="phone-portrait-outline"
-                  error={payPhoneError}
-                />
-                <Button
-                  title={payStep === 'paying' ? 'Sending USSD push…' : `Pay ${PLANS.find(p => p.id === selectedPlanId)?.priceLabel}`}
-                  onPress={handleInitiatePay}
-                  loading={payStep === 'paying'}
-                  fullWidth size="lg"
-                  style={{ marginTop: SPACING.sm }}
-                />
-                <TouchableOpacity
-                  style={{ alignItems: 'center', marginTop: SPACING.md }}
-                  onPress={() => setStep('plan')}
-                  disabled={payStep === 'paying'}
-                >
-                  <Text style={{ color: COLORS.textSecondary, fontSize: FONTS.sizes.sm }}>← Back to plans</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
       </ScrollView>
     </View>
   );
@@ -544,7 +505,6 @@ const styles = StyleSheet.create({
   currencyLeft: { flexDirection: 'row', alignItems: 'center' },
   currencyCode: { fontSize: FONTS.sizes.md, fontWeight: '700', color: COLORS.text },
   currencyName: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted },
-  currencyText: { fontSize: FONTS.sizes.md, color: COLORS.text },
   currencyTextSelected: { color: COLORS.accent, fontWeight: '600' },
   planCard: {
     flexDirection: 'row',
@@ -569,11 +529,4 @@ const styles = StyleSheet.create({
   planName: { fontSize: FONTS.sizes.md, fontWeight: '600', color: COLORS.text },
   planPrice: { fontSize: FONTS.sizes.sm, color: COLORS.textSecondary },
   planFeatures: { fontSize: FONTS.sizes.xs, color: COLORS.textMuted, marginTop: 2 },
-  badge: {
-    backgroundColor: COLORS.accent,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  badgeText: { color: COLORS.white, fontSize: FONTS.sizes.xs, fontWeight: '600' },
 });

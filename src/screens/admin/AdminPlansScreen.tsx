@@ -23,18 +23,22 @@ const PLAN_META: Record<string, { price: string; period: string; color: string; 
   free: {
     price: 'TZS 0', period: 'Forever', color: COLORS.textSecondary, bgColor: '#F3F4F6',
     features: ['1 Business', '1 user', '100 products', 'Basic reports', 'Mobile app'],
+    max_businesses: 1, max_users: 1, max_products: 100,
   },
   starter: {
     price: 'TZS 15,000', period: '/month', color: COLORS.info, bgColor: COLORS.infoLight,
     features: ['1 Business', '3 users', '500 products', 'Advanced reports', 'Email support'],
+    max_businesses: 1, max_users: 3, max_products: 500,
   },
   business: {
     price: 'TZS 35,000', period: '/month', color: COLORS.success, bgColor: COLORS.successLight, popular: true,
     features: ['2 Businesses', '10 users', 'Unlimited products', 'Full analytics', 'Priority support', 'Staff management'],
+    max_businesses: 2, max_users: 10, max_products: -1,
   },
   premium: {
     price: 'TZS 80,000', period: '/month', color: COLORS.accent, bgColor: COLORS.warningLight,
     features: ['2 Businesses', 'Unlimited users', 'Unlimited products', 'Custom reports', '24/7 support', 'API access'],
+    max_businesses: 2, max_users: -1, max_products: -1,
   },
 };
 
@@ -77,6 +81,9 @@ interface PlanDef {
   color: string;
   bg_color: string;
   features: string[];
+  max_businesses: number;
+  max_users: number;
+  max_products: number;
   is_popular: boolean;
 }
 
@@ -112,6 +119,9 @@ export function AdminPlansScreen() {
   const [planEditPrice, setPlanEditPrice] = useState('');
   const [planEditPeriod, setPlanEditPeriod] = useState('');
   const [planEditFeatures, setPlanEditFeatures] = useState<string[]>([]);
+  const [planEditMaxBiz, setPlanEditMaxBiz] = useState('');
+  const [planEditMaxUsers, setPlanEditMaxUsers] = useState('');
+  const [planEditMaxProd, setPlanEditMaxProd] = useState('');
   const [planEditPopular, setPlanEditPopular] = useState(false);
   const [planEditSaving, setPlanEditSaving] = useState(false);
   const [newFeature, setNewFeature] = useState('');
@@ -190,6 +200,9 @@ export function AdminPlansScreen() {
         color: meta.color,
         bg_color: meta.bgColor,
         features: [...meta.features],
+        max_businesses: (meta as any).max_businesses ?? 1,
+        max_users: (meta as any).max_users ?? 1,
+        max_products: (meta as any).max_products ?? 100,
         is_popular: meta.popular ?? false,
       };
     }
@@ -203,6 +216,9 @@ export function AdminPlansScreen() {
         color: row.color ?? PLAN_META[row.id]?.color ?? '#6B7280',
         bg_color: row.bg_color ?? PLAN_META[row.id]?.bgColor ?? '#F3F4F6',
         features: Array.isArray(row.features) ? row.features : (PLAN_META[row.id]?.features ?? []),
+        max_businesses: row.max_businesses ?? (PLAN_META[row.id] as any)?.max_businesses ?? 1,
+        max_users: row.max_users ?? (PLAN_META[row.id] as any)?.max_users ?? 1,
+        max_products: row.max_products ?? (PLAN_META[row.id] as any)?.max_products ?? 100,
         is_popular: row.is_popular ?? false,
       };
     }
@@ -232,6 +248,9 @@ export function AdminPlansScreen() {
     setPlanEditPrice(String(def.price));
     setPlanEditPeriod(def.period);
     setPlanEditFeatures([...def.features]);
+    setPlanEditMaxBiz(String(def.max_businesses));
+    setPlanEditMaxUsers(String(def.max_users));
+    setPlanEditMaxProd(String(def.max_products));
     setPlanEditPopular(def.is_popular);
     setNewFeature('');
     setPlanEditVisible(true);
@@ -250,6 +269,9 @@ export function AdminPlansScreen() {
           price,
           period: planEditPeriod,
           features: planEditFeatures,
+          max_businesses: parseInt(planEditMaxBiz, 10) || -1,
+          max_users: parseInt(planEditMaxUsers, 10) || -1,
+          max_products: parseInt(planEditMaxProd, 10) || -1,
           is_popular: planEditPopular,
           color: meta?.color ?? '#6B7280',
           bg_color: meta?.bgColor ?? '#F3F4F6',
@@ -546,7 +568,7 @@ export function AdminPlansScreen() {
                 <View style={styles.planDivider} />
                 <View style={styles.bizCount}>
                   <Ionicons name="storefront-outline" size={14} color={COLORS.textMuted} />
-                  <Text style={styles.bizCountText}>{count} {count === 1 ? 'Shop' : 'Shops'}</Text>
+                  <Text style={styles.bizCountText}>{count} Active Sub{count !== 1 ? 's' : ''}</Text>
                 </View>
                 <View style={styles.featuresList}>
                   {def.features.map((f, i) => (
@@ -809,6 +831,42 @@ export function AdminPlansScreen() {
               ))}
             </View>
 
+            <View style={styles.limitsRow}>
+              <View style={styles.limitCol}>
+                <Text style={styles.fieldLabel}>Max Shops</Text>
+                <TextInput
+                  style={styles.readOnlyInput}
+                  value={planEditMaxBiz}
+                  onChangeText={v => setPlanEditMaxBiz(v.replace(/[^0-9-]/g, ''))}
+                  keyboardType="number-pad"
+                  placeholder="-1 for auto"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+              <View style={styles.limitCol}>
+                <Text style={styles.fieldLabel}>Max Staff</Text>
+                <TextInput
+                  style={styles.readOnlyInput}
+                  value={planEditMaxUsers}
+                  onChangeText={v => setPlanEditMaxUsers(v.replace(/[^0-9-]/g, ''))}
+                  keyboardType="number-pad"
+                  placeholder="-1 for unltd"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+              <View style={styles.limitCol}>
+                <Text style={styles.fieldLabel}>Max Products</Text>
+                <TextInput
+                  style={styles.readOnlyInput}
+                  value={planEditMaxProd}
+                  onChangeText={v => setPlanEditMaxProd(v.replace(/[^0-9-]/g, ''))}
+                  keyboardType="number-pad"
+                  placeholder="-1 for unltd"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+            </View>
+
             <View style={styles.popularToggleRow}>
               <Text style={styles.fieldLabel}>Mark as Most Popular</Text>
               <Switch
@@ -964,6 +1022,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   planActionText: { fontSize: FONTS.sizes.xs, fontWeight: '600' },
+  limitsRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.sm },
+  limitCol: { flex: 1 },
   popularToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',

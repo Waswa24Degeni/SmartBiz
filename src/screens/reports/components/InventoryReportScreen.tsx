@@ -66,41 +66,37 @@ export const InventoryReportScreen = ({
         )}
       </View>
 
-      {/* Product Table */}
+      {/* Product List */}
       <View style={styles.tableCard}>
         <Text style={styles.tableCardTitle}>Stock Valuation Summary</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.tableContainer}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.thText, { width: 140 }]}>Product Name</Text>
-              <Text style={[styles.thText, { width: 80 }]}>SKU</Text>
-              <Text style={[styles.thText, { width: 100 }]}>Category</Text>
-              <Text style={[styles.thText, { width: 70, textAlign: 'center' }]}>Current Stock</Text>
-              <Text style={[styles.thText, { width: 90, textAlign: 'right' }]}>Buying Price</Text>
-              <Text style={[styles.thText, { width: 90, textAlign: 'right' }]}>Selling Price</Text>
-              <Text style={[styles.thText, { width: 110, textAlign: 'right' }]}>Stock Value</Text>
-            </View>
-            {products.length === 0 ? (
-              <Text style={styles.noDataRow}>No active products</Text>
-            ) : (
-              products.slice(0, 10).map((p) => {
-                const val = (p.stock_quantity || 0) * (p.selling_price || 0);
-                const lowStock = p.stock_quantity <= (p.low_stock_threshold || 0);
-                return (
-                  <View key={p.id} style={styles.tableDataRow}>
-                    <Text style={[styles.tdText, styles.tdOrderNum, { width: 140 }]} numberOfLines={1}>{p.name}</Text>
-                    <Text style={[styles.tdText, { width: 80 }]} numberOfLines={1}>{p.sku || '—'}</Text>
-                    <Text style={[styles.tdText, { width: 100 }]}>{p.categories?.name || 'Uncategorized'}</Text>
-                    <Text style={[styles.tdText, { width: 70, textAlign: 'center', fontWeight: '700', color: lowStock ? '#EF4444' : '#10B981' }]}>{p.stock_quantity}</Text>
-                    <Text style={[styles.tdText, { width: 90, textAlign: 'right' }]}>{fmtCurrency(p.purchase_price || 0)}</Text>
-                    <Text style={[styles.tdText, { width: 90, textAlign: 'right' }]}>{fmtCurrency(p.selling_price || 0)}</Text>
-                    <Text style={[styles.tdText, styles.tdAmount, { width: 110, textAlign: 'right' }]}>{fmtCurrency(val)}</Text>
+        {products.length === 0 ? (
+          <Text style={styles.noDataRow}>No active products</Text>
+        ) : (
+          products.slice(0, 10).map((p) => {
+            const val = (p.stock_quantity || 0) * (p.selling_price || 0);
+            const lowStock = p.stock_quantity <= (p.low_stock_threshold || 0);
+            return (
+              <View key={p.id} style={styles.listItemRow}>
+                <View style={styles.listItemLeft}>
+                  <Text style={styles.listItemName} numberOfLines={1}>{p.name}</Text>
+                  <Text style={styles.listItemSubtext}>{p.categories?.name || 'Uncategorized'} • {p.sku || 'No SKU'}</Text>
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceLabel}>Buy: {fmtCurrency(p.purchase_price || 0)}</Text>
+                    <Text style={styles.priceSeparator}>•</Text>
+                    <Text style={styles.priceLabel}>Sell: {fmtCurrency(p.selling_price || 0)}</Text>
                   </View>
-                );
-              })
-            )}
-          </View>
-        </ScrollView>
+                </View>
+                <View style={styles.listItemRight}>
+                  <View style={[styles.stockBadge, { backgroundColor: lowStock ? '#FEE2E2' : '#D1FAE5' }]}>
+                    <Text style={[styles.stockText, { color: lowStock ? '#EF4444' : '#10B981' }]}>{p.stock_quantity} units</Text>
+                  </View>
+                  <Text style={styles.listItemVal}>{fmtCurrency(val)}</Text>
+                  <Text style={styles.listItemSubVal}>Stock Value</Text>
+                </View>
+              </View>
+            );
+          })
+        )}
 
         {/* Action buttons inside the card */}
         <View style={styles.cardActionsRow}>
@@ -120,16 +116,16 @@ export const InventoryReportScreen = ({
 
 const styles = StyleSheet.create({
   tabContent: {
-    gap: SPACING.md,
+    gap: SPACING.sm,
   },
   reportMainCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: SPACING.lg,
+    borderRadius: 20,
+    padding: SPACING.md,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 2,
   },
   sectionTitle: {
@@ -160,10 +156,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   kpiValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: '#111827',
-    marginTop: 4,
+    marginTop: 2,
   },
   chartsRow: {
     flexDirection: 'row',
@@ -174,35 +170,93 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 280,
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: SPACING.md,
+    borderRadius: 20,
+    padding: SPACING.sm,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 2,
   },
   chartTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: SPACING.xs,
+  },
+  tableCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: SPACING.sm,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  tableCardTitle: {
     fontSize: 12,
     fontWeight: '800',
     color: '#111827',
     marginBottom: SPACING.sm,
   },
-  tableCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: SPACING.md,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    elevation: 2,
+  listItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: SPACING.sm,
   },
-  tableCardTitle: {
+  listItemLeft: {
+    flex: 1,
+    gap: 4,
+  },
+  listItemName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  listItemSubtext: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  priceLabel: {
+    fontSize: 10,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  priceSeparator: {
+    fontSize: 10,
+    color: '#CBD5E1',
+  },
+  listItemRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  stockBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  stockText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  listItemVal: {
     fontSize: 13,
     fontWeight: '800',
     color: '#111827',
-    marginBottom: SPACING.md,
+  },
+  listItemSubVal: {
+    fontSize: 9,
+    color: '#6B7280',
+    textTransform: 'uppercase',
   },
   tableContainer: {
     flexDirection: 'column',

@@ -1070,7 +1070,7 @@ function WithdrawModal({
                     <Text style={styles.securityTitle}>Identity Verification</Text>
                   </View>
                   <Text style={styles.securityBody}>
-                    Enter your SmartBiz account password for extra security (optional).
+                    Enter your SmartEnterprise account password for extra security (optional).
                   </Text>
 
                   <View style={styles.passwordWrap}>

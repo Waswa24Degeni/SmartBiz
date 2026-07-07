@@ -12,6 +12,8 @@ interface AuthContextValue {
   businesses: Business[];
   loading: boolean;
   profileLoading: boolean;
+  isPasswordRecovery: boolean;
+  clearPasswordRecovery: () => void;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string, metadata?: Record<string, any>) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -30,6 +32,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   // Tracks whether an in-flight profile fetch is happening after signIn
   const [profileLoading, setProfileLoading] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+
+  const clearPasswordRecovery = () => setIsPasswordRecovery(false);
 
   const isRefreshTokenError = (err: unknown): boolean => {
     const msg = String((err as any)?.message ?? err ?? '').toLowerCase();
@@ -108,6 +113,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true);
+      }
+
       if (event === 'SIGNED_OUT') {
         setSession(null);
         setUser(null);
@@ -185,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // id-drift: fix-auth.sql created a new auth UUID but the old
         // public.users row still has the previous id.
         const emailLower = (supabaseUser.email ?? '').toLowerCase();
-        const inferredRole = emailLower === 'admin@smartbiz.tz' ? 'admin' : 'owner';
+        const inferredRole = emailLower === 'admin@smartenterprise.tz' ? 'admin' : 'owner';
         const fallbackName =
           supabaseUser.user_metadata?.full_name ??
           supabaseUser.email?.split('@')[0] ??
@@ -250,7 +259,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!resolvedProfile) return;
 
       // ── Step 2: auto-correct admin role if the trigger set it wrong ────────
-      if (resolvedProfile.email === 'admin@smartbiz.tz' && resolvedProfile.role !== 'admin') {
+      if (resolvedProfile.email === 'admin@smartenterprise.tz' && resolvedProfile.role !== 'admin') {
         const { data: fixed } = await supabase
           .from('users')
           .update({ role: 'admin' })
@@ -403,7 +412,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, business, businesses, subscription, loading, profileLoading, signIn, signUp, signOut, refreshUser, switchBusiness }}>
+    <AuthContext.Provider value={{ session, user, business, businesses, subscription, loading, profileLoading, isPasswordRecovery, clearPasswordRecovery, signIn, signUp, signOut, refreshUser, switchBusiness }}>
       {children}
     </AuthContext.Provider>
   );

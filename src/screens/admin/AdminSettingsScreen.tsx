@@ -27,8 +27,8 @@ interface SystemConfig {
 }
 
 const DEFAULT_CONFIG: SystemConfig = {
-  app_name: 'SmartBiz TZ',
-  support_email: 'support@smartbiz.tz',
+  app_name: 'SmartEnterprise TZ',
+  support_email: 'support@smartenterprise.tz',
   support_phone: '+255 000 000 000',
   default_currency: 'TZS',
   allow_new_registrations: true,
@@ -155,7 +155,7 @@ export function AdminSettingsScreen() {
             style={styles.input}
             value={config.app_name}
             onChangeText={v => setConfig(c => ({ ...c, app_name: v }))}
-            placeholder="SmartBiz TZ"
+            placeholder="SmartEnterprise TZ"
             placeholderTextColor={COLORS.textMuted}
           />
         </SettingRow>
@@ -181,7 +181,7 @@ export function AdminSettingsScreen() {
             style={styles.input}
             value={config.support_email}
             onChangeText={v => setConfig(c => ({ ...c, support_email: v }))}
-            placeholder="support@smartbiz.tz"
+            placeholder="support@smartenterprise.tz"
             placeholderTextColor={COLORS.textMuted}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -280,7 +280,7 @@ export function AdminSettingsScreen() {
         <Text style={styles.sectionHeader}>About</Text>
         {[
           { label: 'App Version', value: '1.0.0' },
-          { label: 'Platform', value: 'SmartBiz TZ' },
+          { label: 'Platform', value: 'SmartEnterprise TZ' },
           { label: 'Database', value: 'Supabase (PostgreSQL)' },
         ].map(row => (
           <View key={row.label} style={styles.aboutRow}>

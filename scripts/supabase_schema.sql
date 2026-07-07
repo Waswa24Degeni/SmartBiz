@@ -1,4 +1,4 @@
--- SmartBiz Database Schema for Supabase PostgreSQL
+-- SmartEnterprise Database Schema for Supabase PostgreSQL
 -- Run this in your Supabase SQL editor
 
 -- Enable UUID extension
@@ -13,7 +13,7 @@ create table if not exists users (
   full_name text not null,
   phone text,
   avatar_url text,
-  role text not null default 'owner' check (role in ('owner', 'staff', 'admin')),
+  role text not null default 'owner' check (role in ('owner', 'staff', 'admin', 'banned')),
   business_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

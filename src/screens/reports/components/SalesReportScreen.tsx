@@ -106,35 +106,26 @@ export const SalesReportScreen = ({
         </View>
       )}
 
-      {/* Detailed Sales Data Table */}
+      {/* Recent Sales Transactions */}
       <View style={styles.tableCard}>
-        <Text style={styles.tableCardTitle}>Sales Ledger</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.tableContainer}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.thText, { width: 90 }]}>Order Number</Text>
-              <Text style={[styles.thText, { width: 120 }]}>Customer</Text>
-              <Text style={[styles.thText, { width: 90 }]}>Date</Text>
-              <Text style={[styles.thText, { width: 60, textAlign: 'center' }]}>Items</Text>
-              <Text style={[styles.thText, { width: 110, textAlign: 'right' }]}>Amount</Text>
-              <Text style={[styles.thText, { width: 100 }]}>Payment Method</Text>
+        <Text style={styles.tableCardTitle}>Recent Transactions</Text>
+        {salesItems.length === 0 ? (
+          <Text style={styles.noDataRow}>No transactions logged</Text>
+        ) : (
+          salesItems.slice(0, 10).map((item) => (
+            <View key={item.id} style={styles.listItemRow}>
+              <View style={styles.listItemLeft}>
+                <Text style={styles.listItemOrderNum}>#{item._order_number || '—'}</Text>
+                <Text style={styles.listItemName}>{item.cashier_name}</Text>
+                <Text style={styles.listItemDate}>{format(new Date(item.created_at), 'dd MMM yyyy')}</Text>
+              </View>
+              <View style={styles.listItemRight}>
+                <Text style={styles.listItemVal}>{fmtCurrency(item.total)}</Text>
+                <Text style={styles.listItemSubVal}>{item.quantity} items • {item._payment_method || 'cash'}</Text>
+              </View>
             </View>
-            {salesItems.length === 0 ? (
-              <Text style={styles.noDataRow}>No transactions logged</Text>
-            ) : (
-              salesItems.slice(0, 10).map((item) => (
-                <View key={item.id} style={styles.tableDataRow}>
-                  <Text style={[styles.tdText, styles.tdOrderNum, { width: 90 }]}>#{item._order_number || '—'}</Text>
-                  <Text style={[styles.tdText, { width: 120 }]} numberOfLines={1}>{item.cashier_name}</Text>
-                  <Text style={[styles.tdText, { width: 90 }]}>{format(new Date(item.created_at), 'dd MMM yyyy')}</Text>
-                  <Text style={[styles.tdText, { width: 60, textAlign: 'center' }]}>{item.quantity}</Text>
-                  <Text style={[styles.tdText, styles.tdAmount, { width: 110, textAlign: 'right' }]}>{fmtCurrency(item.total)}</Text>
-                  <Text style={[styles.tdText, styles.tdPayment, { width: 100 }]}>{item._payment_method || 'cash'}</Text>
-                </View>
-              ))
-            )}
-          </View>
-        </ScrollView>
+          ))
+        )}
 
         {/* Action buttons inside the card */}
         <View style={styles.cardActionsRow}>
@@ -158,16 +149,16 @@ export const SalesReportScreen = ({
 
 const styles = StyleSheet.create({
   tabContent: {
-    gap: SPACING.md,
+    gap: SPACING.sm,
   },
   reportMainCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: SPACING.lg,
+    borderRadius: 20,
+    padding: SPACING.md,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 2,
   },
   sectionTitle: {
@@ -198,10 +189,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   kpiValue: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: '#111827',
-    marginTop: 4,
+    marginTop: 2,
   },
   chartsRow: {
     flexDirection: 'row',
@@ -212,48 +203,47 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 280,
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: SPACING.md,
+    borderRadius: 20,
+    padding: SPACING.sm,
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 2,
   },
   chartTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: SPACING.xs,
+  },
+  tableCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: SPACING.sm,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  tableCardTitle: {
     fontSize: 12,
     fontWeight: '800',
     color: '#111827',
     marginBottom: SPACING.sm,
   },
-  tableCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: SPACING.md,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  tableCardTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: SPACING.md,
-  },
   listItemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.xs,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
   listItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    flex: 1,
+    gap: 2,
   },
   listItemBadge: {
     width: 20,
@@ -266,10 +256,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#6B7280',
   },
+  listItemOrderNum: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0165FC',
+  },
   listItemName: {
     fontSize: 13,
     fontWeight: '600',
     color: '#111827',
+  },
+  listItemDate: {
+    fontSize: 10,
+    color: '#6B7280',
   },
   listItemRight: {
     alignItems: 'flex-end',

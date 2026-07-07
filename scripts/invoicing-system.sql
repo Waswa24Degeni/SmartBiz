@@ -1,4 +1,4 @@
--- SmartBiz Invoicing System Schema
+-- SmartEnterprise Invoicing System Schema
 -- Supports Proforma Invoices → Invoices → Receipts
 -- Run this in your Supabase SQL editor AFTER the main schema
 

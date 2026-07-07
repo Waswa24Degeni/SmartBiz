@@ -22,6 +22,7 @@ import { useSettings } from '../../context/SettingsContext';
 import { supabase } from '../../lib/supabase';
 import { Sale, Product } from '../../types';
 import { COLORS, SPACING, FONTS, RADIUS, SHADOWS, BREAKPOINTS, WEB_OUTLINE_NONE } from '../../lib/constants';
+import { getPosType } from '../../lib/inventory';
 import { format, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { useRealtimeSubscription } from '../../lib/hooks';
 import { ListSkeleton } from '../../components/common/SkeletonLoader';
@@ -89,6 +90,8 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
   const isCompact = width < 520;
+
+  const posType = getPosType(business?.category);
   const isTablet = width >= BREAKPOINTS.tablet && width < BREAKPOINTS.desktop;
   const isDesktop = width >= BREAKPOINTS.desktop;
   const showSplit = !isMobile;
@@ -339,7 +342,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
 
   const handleSelectSale = (sale: Sale) => {
     setSelectedSale(sale);
-    if (isMobile || viewMode === 'kanban') {
+    if (isMobile) {
       setDetailVisible(true);
     }
   };
@@ -434,12 +437,20 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
       Alert.alert('Phone required', "Please enter the customer's mobile money phone number.");
       return;
     }
+    if (chargeMethod === 'mobile_money' && /[a-zA-Z]/.test(chargeMobilePhone)) {
+      Alert.alert('Invalid phone', 'Phone number should not contain letters.');
+      return;
+    }
     if (chargeMethod === 'mobile_money' && !isValidTzPhone(chargeMobilePhone)) {
       Alert.alert('Invalid phone', 'Enter a valid Tanzania mobile number (07XXXXXXXX or 2557XXXXXXX).');
       return;
     }
     if (chargeMethod === 'mobile_money' && !chargePayerName.trim()) {
       Alert.alert('Name required', "Please enter the payer's name.");
+      return;
+    }
+    if (chargeMethod === 'mobile_money' && /\d/.test(chargePayerName)) {
+      Alert.alert('Invalid name', 'Payer name should not contain numbers.');
       return;
     }
     if (chargeMethod === 'mobile_money' && chargePayerName.trim().length < 3) {
@@ -702,7 +713,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
   };
 
   const handleCreateOrder = async () => {
-    if (!tableNumber.trim()) {
+    if (posType === 'food' && !tableNumber.trim()) {
       Alert.alert('Required', 'Table number is required');
       return;
     }
@@ -721,8 +732,8 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
         business_id: business.id,
         cashier_id: user.id,
         order_number: orderNumber,
-        table_number: tableNumber.trim(),
-        guests: parseInt(guests, 10) || 1,
+        table_number: posType === 'food' ? tableNumber.trim() : null,
+        guests: posType === 'food' ? (parseInt(guests, 10) || 1) : 1,
         status: 'active',
         subtotal: 0,
         discount: 0,
@@ -1792,7 +1803,7 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
             }}
           >
             <Ionicons name="albums-outline" size={14} color={viewMode === 'kanban' ? COLORS.white : COLORS.textSecondary} />
-            <Text style={[styles.viewToggleBtnText, viewMode === 'kanban' && styles.viewToggleBtnTextActive]}>Board</Text>
+            <Text style={[styles.viewToggleBtnText, viewMode === 'kanban' && styles.viewToggleBtnTextActive]}>Kanban</Text>
           </TouchableOpacity>
         </View>
 
@@ -1807,9 +1818,9 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
         <View
           style={[
             styles.listCol,
-            (isMobile || viewMode === 'kanban') && styles.listColMobile,
-            isTablet && viewMode !== 'kanban' && styles.listColTablet,
-            isDesktop && viewMode !== 'kanban' && styles.listColDesktop,
+            isMobile && styles.listColMobile,
+            isTablet && styles.listColTablet,
+            isDesktop && styles.listColDesktop,
           ]}
         >
           {loading && sales.length === 0 ? (
@@ -1856,12 +1867,15 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
             renderKanbanBoard()
           ) : (
             <FlatList
+              key={viewMode}
               data={filtered}
+              numColumns={viewMode === 'card' && !isCompact ? 2 : 1}
               style={styles.billsList}
               keyExtractor={(item, index) => `${item.id}-${index}`}
               contentContainerStyle={{ paddingBottom: SPACING.xl, paddingTop: SPACING.xs }}
               keyboardShouldPersistTaps="handled"
               removeClippedSubviews={Platform.OS !== 'web'}
+              columnWrapperStyle={viewMode === 'card' && !isCompact ? { gap: SPACING.xs } : undefined}
               refreshControl={
                 <RefreshControl
                   refreshing={refreshing}
@@ -1878,19 +1892,18 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
                 }
                 return renderModernCard(item);
               }}
-              ItemSeparatorComponent={() => <View style={{ height: viewMode === 'list' ? 1 : 12 }} />}
             />
           )}
         </View>
 
         {/* Tablet/Desktop Detail Split Column */}
-        {showSplit && selectedSale && viewMode !== 'kanban' && (
+        {showSplit && selectedSale && (
           <ScrollView style={styles.detailCol} contentContainerStyle={styles.detailColContent}>
             <DetailContent sale={selectedSale} />
           </ScrollView>
         )}
 
-        {showSplit && !selectedSale && viewMode !== 'kanban' && (
+        {showSplit && !selectedSale && (
           <View style={styles.detailEmpty}>
             <View style={styles.detailEmptyIcon}>
               <Ionicons name="receipt-outline" size={36} color={COLORS.textMuted} />
@@ -1936,29 +1949,33 @@ export function BillsScreen({ prefillProduct = null, prefillNonce = 0 }: BillsSc
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.fieldWrap}>
-                <Text style={styles.fieldLabel}>Table Number *</Text>
-                <TextInput
-                  style={[styles.fieldInput, WEB_OUTLINE_NONE]}
-                  placeholder="e.g. 5A"
-                  placeholderTextColor={COLORS.textMuted}
-                  value={tableNumber}
-                  onChangeText={setTableNumber}
-                  autoFocus
-                />
-              </View>
+              {posType === 'food' && (
+                <>
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>Table Number *</Text>
+                    <TextInput
+                      style={[styles.fieldInput, WEB_OUTLINE_NONE]}
+                      placeholder="e.g. 5A"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={tableNumber}
+                      onChangeText={setTableNumber}
+                      autoFocus
+                    />
+                  </View>
 
-              <View style={styles.fieldWrap}>
-                <Text style={styles.fieldLabel}>Guests</Text>
-                <TextInput
-                  style={[styles.fieldInput, WEB_OUTLINE_NONE]}
-                  placeholder="1"
-                  placeholderTextColor={COLORS.textMuted}
-                  value={guests}
-                  onChangeText={setGuests}
-                  keyboardType="number-pad"
-                />
-              </View>
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>Guests</Text>
+                    <TextInput
+                      style={[styles.fieldInput, WEB_OUTLINE_NONE]}
+                      placeholder="1"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={guests}
+                      onChangeText={setGuests}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                </>
+              )}
 
               <View style={styles.fieldWrap}>
                 <Text style={styles.fieldLabel}>Payment Method</Text>
@@ -2267,15 +2284,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: SPACING.base,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.sm,
+    paddingTop: SPACING.xs,
+    paddingBottom: SPACING.xs,
     backgroundColor: COLORS.surface,
   },
   ordersHeaderLeft: {
     flex: 1,
   },
   ordersHeaderTitle: {
-    fontSize: FONTS.sizes.xl,
+    fontSize: FONTS.sizes.lg,
     fontWeight: '800',
     color: COLORS.text,
     letterSpacing: -0.5,
@@ -2292,8 +2309,8 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   headerIconBtn: {
-    width: 38,
-    height: 38,
+    width: 32,
+    height: 32,
     borderRadius: RADIUS.sm,
     backgroundColor: COLORS.background,
     alignItems: 'center',
@@ -2315,8 +2332,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.error,
   },
   headerAvatar: {
-    width: 38,
-    height: 38,
+    width: 32,
+    height: 32,
     borderRadius: RADIUS.sm,
     backgroundColor: COLORS.primary,
     alignItems: 'center',
@@ -2331,16 +2348,16 @@ const styles = StyleSheet.create({
   // ── Stats Cards Styles ──
   summaryScroll: {
     backgroundColor: COLORS.surface,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.xs,
   },
   summaryScrollContent: {
     paddingHorizontal: SPACING.base,
-    gap: SPACING.sm,
+    gap: SPACING.xs,
   },
   summaryCard: {
-    width: 140,
+    width: 130,
     borderRadius: RADIUS.md,
-    padding: SPACING.md,
+    padding: SPACING.sm,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
@@ -2351,12 +2368,12 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   summaryCardTitle: {
-    fontSize: FONTS.sizes.xs,
+    fontSize: 10,
     fontWeight: '600',
     color: COLORS.textSecondary,
   },
   summaryCardValue: {
-    fontSize: FONTS.sizes.md,
+    fontSize: FONTS.sizes.sm,
     fontWeight: '800',
     color: COLORS.text,
     marginTop: 2,
@@ -2365,9 +2382,9 @@ const styles = StyleSheet.create({
   // ── Dropdown Filters ──
   filterSelectorsRow: {
     flexDirection: 'row',
-    gap: SPACING.sm,
+    gap: SPACING.xs,
     paddingHorizontal: SPACING.base,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.xs,
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
@@ -2375,9 +2392,9 @@ const styles = StyleSheet.create({
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 7,
+    gap: 4,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
     borderRadius: RADIUS.full,
     backgroundColor: COLORS.background,
     borderWidth: 1,
@@ -2395,7 +2412,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: SPACING.base,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.xs,
     backgroundColor: COLORS.surface,
   },
   viewToggleGroup: {
@@ -2428,11 +2445,11 @@ const styles = StyleSheet.create({
   ordersHeaderAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: COLORS.accent,
     borderRadius: RADIUS.sm,
-    paddingVertical: 7,
-    paddingHorizontal: SPACING.md,
+    paddingVertical: 5,
+    paddingHorizontal: SPACING.sm,
   },
   ordersHeaderAddBtnText: {
     fontSize: FONTS.sizes.xs,
@@ -2497,10 +2514,12 @@ const styles = StyleSheet.create({
 
   // ── Modern Card Styles ──
   modernCard: {
+    flex: 1,
     backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    padding: SPACING.md,
-    marginHorizontal: SPACING.sm,
+    borderRadius: 16,
+    padding: SPACING.sm,
+    marginVertical: SPACING.xs,
+    marginHorizontal: SPACING.xs,
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOWS.sm,
@@ -2513,15 +2532,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
   modernCardOrderNum: {
-    fontSize: FONTS.sizes.base,
+    fontSize: FONTS.sizes.sm,
     fontWeight: '800',
     color: COLORS.text,
   },
   modernCardSub: {
-    fontSize: FONTS.sizes.xs,
+    fontSize: 10,
     color: COLORS.textSecondary,
     marginTop: 2,
     fontWeight: '500',
@@ -2540,17 +2559,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.md,
-    paddingBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
+    paddingBottom: SPACING.xs,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
   },
   modernCardTime: {
-    fontSize: FONTS.sizes.xs,
+    fontSize: 10,
     color: COLORS.textMuted,
   },
   modernCardMetaText: {
-    fontSize: FONTS.sizes.xs,
+    fontSize: 10,
     color: COLORS.textSecondary,
     fontWeight: '500',
   },
@@ -2558,7 +2577,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
   modernCardFooterLeft: {
     flexDirection: 'row',
@@ -2581,7 +2600,7 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize',
   },
   modernCardAmount: {
-    fontSize: FONTS.sizes.md,
+    fontSize: FONTS.sizes.sm,
     fontWeight: '800',
     color: COLORS.text,
   },
@@ -2591,7 +2610,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
-    paddingTop: SPACING.sm,
+    paddingTop: SPACING.xs,
   },
   modernActionBtn: {
     flex: 1,
@@ -2599,14 +2618,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: RADIUS.xs,
     backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   modernActionBtnText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: COLORS.primary,
   },
@@ -2814,9 +2833,9 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
     marginHorizontal: SPACING.base,
     marginTop: SPACING.xs,
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
     paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.sm,
+    paddingVertical: 6,
     backgroundColor: COLORS.background,
     borderRadius: RADIUS.md,
     borderWidth: 1,

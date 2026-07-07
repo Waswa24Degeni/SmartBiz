@@ -16,6 +16,7 @@ import { createClient } from '@supabase/supabase-js';
 import { useAuth } from '../../context/AuthContext';
 import { COLORS, FONTS, RADIUS, SPACING, BREAKPOINTS, SHADOWS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
+import { useSubscriptionPlans } from '../../lib/hooks';
 import { format } from 'date-fns';
 
 interface StaffRow {
@@ -69,7 +70,7 @@ const onboardingClient = createClient(
 
 function generateTempPassword() {
   const random = Math.random().toString(36).slice(2, 10);
-  return `Sb@${random}9`;
+  return `Se@${random}9`;
 }
 
 function normalizeEmail(raw: string) {
@@ -91,7 +92,7 @@ function getRoleColor(role: StaffRow['role']) {
 }
 
 export function StaffScreen() {
-  const { business, user } = useAuth();
+  const { business, user, subscription } = useAuth();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
   const isNarrow = width < 400;
@@ -102,12 +103,19 @@ export function StaffScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editTarget, setEditTarget] = useState<StaffRow | null>(null);
 
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetTarget, setResetTarget] = useState<StaffRow | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [resetting, setResetting] = useState(false);
+
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
   const [tempPassword, setTempPassword] = useState(generateTempPassword());
   const [role, setRole] = useState<'manager' | 'cashier' | 'waiter'>('cashier');
   const [isActive, setIsActive] = useState(true);
   const [permissions, setPermissions] = useState<string[]>([...ROLE_DEFAULT_PERMS.cashier]);
+
+  const { plans } = useSubscriptionPlans();
 
   const canManageStaff = user?.role === 'owner' || user?.role === 'admin';
 
@@ -218,6 +226,20 @@ export function StaffScreen() {
       return;
     }
 
+    if (!editTarget) {
+      const currentPlanId = subscription?.plan ?? 'free';
+      const currentPlanDef = plans.find(p => p.id === currentPlanId);
+      const maxUsers = currentPlanDef?.max_users ?? 1;
+
+      if (maxUsers !== -1 && rows.length >= maxUsers) {
+        Alert.alert(
+          'Upgrade required',
+          `Your current plan allows a maximum of ${maxUsers} staff member${maxUsers === 1 ? '' : 's'}. Please upgrade your subscription to add more staff.`
+        );
+        return;
+      }
+    }
+
     setSaving(true);
 
     // Staff account must already exist in auth/users. We only link it to business and permissions.
@@ -307,17 +329,15 @@ export function StaffScreen() {
     }
 
     const { error: upUserErr } = await supabase
-      .from('users')
-      .update({
-        business_id: business.id,
-        role: 'staff',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', foundUser.id);
+      .rpc('assign_staff_to_business', {
+        p_user_id: foundUser.id,
+        p_business_id: business.id,
+        p_role: 'staff',
+      });
 
     if (upUserErr) {
       setSaving(false);
-      Alert.alert('Error', upUserErr.message);
+      Alert.alert('Error', `Failed to assign staff to business: ${upUserErr.message}`);
       return;
     }
 
@@ -396,6 +416,52 @@ export function StaffScreen() {
         },
       },
     ]);
+  };
+
+  const handleResetPasswordSubmit = async () => {
+    if (!resetTarget) return;
+    if (newPassword.length < 6) {
+      Alert.alert('Weak password', 'Password must be at least 6 characters.');
+      return;
+    }
+
+    setResetting(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    try {
+      const res = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/admin-reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          target_user_id: resetTarget.user_id,
+          new_password: newPassword,
+        }),
+      });
+      
+      const data = await res.json();
+      setResetting(false);
+      
+      if (!res.ok) {
+        Alert.alert('Error', data.error || 'Failed to reset password');
+      } else {
+        Alert.alert('Success', 'Password has been updated.');
+        setResetModalVisible(false);
+        setNewPassword('');
+        setResetTarget(null);
+      }
+    } catch (err: any) {
+      setResetting(false);
+      Alert.alert('Error', err.message);
+    }
+  };
+
+  const openResetPassword = (row: StaffRow) => {
+    setResetTarget(row);
+    setNewPassword('');
+    setResetModalVisible(true);
   };
 
   const activeCount = useMemo(() => rows.filter((r) => r.is_active).length, [rows]);
@@ -493,6 +559,9 @@ export function StaffScreen() {
                     </View>
                   </View>
                   <View style={styles.cardActions}>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => openResetPassword(row)}>
+                      <Ionicons name="key-outline" size={15} color={COLORS.warning} />
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(row)}>
                       <Ionicons name="create-outline" size={15} color={COLORS.info} />
                     </TouchableOpacity>
@@ -616,6 +685,41 @@ export function StaffScreen() {
               </TouchableOpacity>
             </View>
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Reset Password Modal */}
+      <Modal visible={resetModalVisible} transparent animationType="fade" onRequestClose={() => setResetModalVisible(false)}>
+        <View style={styles.overlay}>
+          <View style={[styles.modalBox, isMobile && styles.modalBoxMobile, isNarrow && styles.modalBoxNarrow]}>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>Reset Password</Text>
+              <TouchableOpacity onPress={() => setResetModalVisible(false)}>
+                <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.insightText}>
+              Enter a new password for {resetTarget?.user?.full_name ?? resetTarget?.user?.email}.
+            </Text>
+            <Text style={styles.label}>New Password</Text>
+            <TextInput
+              style={styles.input}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="Min 6 characters"
+              autoCapitalize="none"
+              secureTextEntry
+              placeholderTextColor={COLORS.textMuted}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.cancelBtn, isMobile && styles.modalBtnMobile]} onPress={() => setResetModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveBtn, isMobile && styles.modalBtnMobile, resetting && { opacity: 0.6 }]} onPress={handleResetPasswordSubmit} disabled={resetting}>
+                {resetting ? <ActivityIndicator size="small" color={COLORS.white} /> : <Text style={styles.saveBtnText}>Reset</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
     </View>
@@ -806,37 +910,37 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
+    justifyContent: 'flex-end',
     gap: SPACING.sm,
-    marginTop: SPACING.sm,
+    marginTop: SPACING.md,
   },
   cancelBtn: {
-    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceAlt,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SPACING.sm,
-    minHeight: 44,
   },
   cancelBtnText: {
-    color: COLORS.textSecondary,
+    color: COLORS.text,
+    fontSize: FONTS.sizes.sm,
     fontWeight: '600',
   },
   saveBtn: {
-    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
     borderRadius: RADIUS.md,
     backgroundColor: COLORS.primary,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SPACING.sm,
-    minHeight: 44,
-  },
-  modalBtnMobile: {
-    minHeight: 46,
   },
   saveBtnText: {
     color: COLORS.white,
+    fontSize: FONTS.sizes.sm,
     fontWeight: '700',
+  },
+  modalBtnMobile: {
+    flex: 1,
   },
 });

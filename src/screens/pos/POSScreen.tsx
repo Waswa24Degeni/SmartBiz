@@ -252,7 +252,7 @@ export function POSScreen() {
             </style>
           </head>
           <body>
-            <div class="center bold" style="font-size: 18px;">${business?.name || 'SmartBiz TZ'}</div>
+            <div class="center bold" style="font-size: 18px;">${business?.name || 'SmartEnterprise TZ'}</div>
             <div class="center">Receipt: ${orderNumber}</div>
             <div class="center">Date: ${new Date().toLocaleString()}</div>
             <div class="divider"></div>

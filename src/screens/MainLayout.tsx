@@ -22,6 +22,7 @@ import { NotificationsScreen } from './notifications/NotificationsScreen';
 import { SalesScreen } from './sales/SalesScreen';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { useRealtimeSubscription } from '../lib/hooks';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GlobalSearch } from '../components/common/GlobalSearch';
 
@@ -79,7 +80,7 @@ export function MainLayout() {
   const drawerWidth = Math.min(Math.max(width * 0.86, 240), 320);
 
   React.useEffect(() => {
-    AsyncStorage.getItem('smartbiz_last_route').then((savedRoute) => {
+    AsyncStorage.getItem('smartenterprise_last_route').then((savedRoute) => {
       if (savedRoute && ROUTE_PERMISSIONS[savedRoute as Route]) {
         setRoute(savedRoute as Route);
       }
@@ -121,6 +122,29 @@ export function MainLayout() {
     loadStaffPerms();
   }, [user, business?.id]);
 
+  // Real-time update for staff permissions
+  useRealtimeSubscription(
+    `staff-perms-${user?.id}`,
+    'staff',
+    async () => {
+      if (!user || !business?.id || user.role === 'owner' || user.role === 'admin') return;
+      const { data } = await supabase
+        .from('staff')
+        .select('permissions, is_active')
+        .eq('business_id', business.id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!data || (data as any).is_active === false) {
+        setStaffPerms([]);
+      } else {
+        const perms: string[] = Array.isArray((data as any).permissions) ? (data as any).permissions : [];
+        setStaffPerms(perms);
+      }
+    },
+    !!user?.id && user?.role === 'staff'
+  );
+
   const refreshBadges = React.useCallback(async () => {
     if (!business?.id || !user?.id) {
       setUnreadNotifications(0);
@@ -137,11 +161,9 @@ export function MainLayout() {
         .eq('is_read', false)
         .neq('type', 'message'),
       supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('is_read', false)
-        .eq('type', 'message'),
+        .from('team_thread_participants')
+        .select('last_read_at, team_threads!inner(updated_at)')
+        .eq('user_id', user.id),
       supabase
         .from('sales')
         .select('id', { count: 'exact', head: true })
@@ -150,7 +172,13 @@ export function MainLayout() {
     ]);
 
     if (!notifRes.error) setUnreadNotifications(notifRes.count ?? 0);
-    if (!msgRes.error) setUnreadMessages(msgRes.count ?? 0);
+    if (!msgRes.error && msgRes.data) {
+      const unread = msgRes.data.filter((p: any) => {
+        if (!p.last_read_at) return true;
+        return new Date(p.last_read_at) < new Date(p.team_threads.updated_at);
+      }).length;
+      setUnreadMessages(unread);
+    }
     if (!ordersRes.error) setOpenOrders(ordersRes.count ?? 0);
   }, [business?.id, user?.id]);
 
@@ -178,9 +206,19 @@ export function MainLayout() {
       )
       .subscribe();
 
+    const messagesChannel = supabase
+      .channel(`badge-team-messages-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'team_thread_participants', filter: `user_id=eq.${user.id}` },
+        () => refreshBadges(),
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(salesChannel);
+      supabase.removeChannel(messagesChannel);
     };
   }, [business?.id, user?.id, refreshBadges]);
 
@@ -208,7 +246,7 @@ export function MainLayout() {
     if (!hasAccess(route)) {
       const fallback = allowedNavItems[0].route;
       setRoute(fallback);
-      AsyncStorage.setItem('smartbiz_last_route', fallback).catch(() => {});
+      AsyncStorage.setItem('smartenterprise_last_route', fallback).catch(() => {});
       setSelectedCategory(null);
     }
   }, [route, hasAccess, allowedNavItems]);
@@ -229,7 +267,7 @@ export function MainLayout() {
     const next = r as Route;
     if (!hasAccess(next)) return;
     setRoute(next);
-    AsyncStorage.setItem('smartbiz_last_route', next).catch(() => {});
+    AsyncStorage.setItem('smartenterprise_last_route', next).catch(() => {});
     setSelectedCategory(null);
     if (next !== 'Bills') {
       setBillPrefillProduct(null);
@@ -251,7 +289,7 @@ export function MainLayout() {
     setBillPrefillProduct(product);
     setBillPrefillNonce((n) => n + 1);
     setRoute('Bills');
-    AsyncStorage.setItem('smartbiz_last_route', 'Bills').catch(() => {});
+    AsyncStorage.setItem('smartenterprise_last_route', 'Bills').catch(() => {});
     setSelectedCategory(null);
     setDrawerOpen(false);
   };

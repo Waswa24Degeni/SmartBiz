@@ -850,16 +850,16 @@ export function ReportsScreen() {
       />
 
       {/* ─── MAIN HEADER ─── */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Reports & Analytics</Text>
+      <View style={[styles.header, isMobile && styles.headerMobile]}>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.headerTitle, isMobile && styles.headerTitleMobile]}>Reports & Analytics</Text>
           <Text style={styles.headerSubtitle}>Business Performance Overview</Text>
           <Text style={styles.lastUpdatedText}>Last Updated: Today • {format(new Date(), 'hh:mm a')}</Text>
         </View>
 
-        <TouchableOpacity style={styles.exportBtn} onPress={() => setExportSheetVisible(true)}>
+        <TouchableOpacity style={[styles.exportBtn, isMobile && styles.exportBtnMobile]} onPress={() => setExportSheetVisible(true)}>
           <Ionicons name="share-outline" size={15} color="#FFFFFF" />
-          <Text style={styles.exportBtnText}>Export Reports</Text>
+          <Text style={styles.exportBtnText}>{isMobile ? 'Export' : 'Export Reports'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -882,7 +882,7 @@ export function ReportsScreen() {
           }
         >
           {/* ─── TOP SEGMENTED NAVIGATION TAB BAR ─── */}
-          <View style={styles.tabsContainer}>
+          <View style={[styles.tabsContainer, isMobile && styles.tabsContainerMobile]}>
             {[
               { id: 'sales', label: 'Sales' },
               { id: 'profit', label: 'Profit' },
@@ -893,13 +893,13 @@ export function ReportsScreen() {
               return (
                 <TouchableOpacity
                   key={tab.id}
-                  style={[styles.tabBtn, active && styles.tabBtnActive]}
+                  style={[styles.tabBtn, active && styles.tabBtnActive, isMobile && styles.tabBtnMobile]}
                   onPress={() => {
                     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                     setActiveTab(tab.id as ReportTab);
                   }}
                 >
-                  <Text style={[styles.tabBtnText, active && styles.tabBtnTextActive]}>
+                  <Text style={[styles.tabBtnText, active && styles.tabBtnTextActive, isMobile && styles.tabBtnTextMobile]}>
                     {tab.label}
                   </Text>
                   {active && <View style={styles.activeLineIndicator} />}
@@ -909,7 +909,7 @@ export function ReportsScreen() {
           </View>
 
           {/* ─── DATE FILTER COMPACT DROPDOWN ROW ─── */}
-          <View style={styles.periodSelectorRow}>
+          <View style={[styles.periodSelectorRow, isMobile && styles.periodSelectorRowMobile]}>
             {[
               { label: 'Today', value: 'day' },
               { label: 'This Week', value: 'week' },
@@ -920,14 +920,14 @@ export function ReportsScreen() {
               return (
                 <TouchableOpacity
                   key={item.value}
-                  style={[styles.periodBtn, active && styles.periodBtnActive]}
+                  style={[styles.periodBtn, active && styles.periodBtnActive, isMobile && styles.periodBtnMobile]}
                   onPress={() => {
                     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                     setPeriod(item.value as Period);
                   }}
                 >
                   <Text style={[styles.periodBtnText, active && styles.periodBtnTextActive]}>
-                    {item.label}
+                    {isMobile ? item.label.replace('This ', '') : item.label}
                   </Text>
                   <Ionicons name="chevron-down" size={10} color={active ? '#FFFFFF' : '#6B7280'} />
                 </TouchableOpacity>
@@ -976,6 +976,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: SPACING.sm,
     paddingHorizontal: SPACING.base,
     paddingTop: Platform.OS === 'ios' ? SPACING.lg : SPACING.md,
     paddingBottom: SPACING.sm,
@@ -983,11 +984,22 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
+  headerMobile: {
+    paddingHorizontal: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  headerLeft: {
+    flex: 1,
+    minWidth: 0,
+  },
   headerTitle: {
     fontSize: 26,
     fontWeight: '800',
     color: '#111827',
     letterSpacing: -0.5,
+  },
+  headerTitleMobile: {
+    fontSize: 20,
   },
   headerSubtitle: {
     fontSize: 13,
@@ -1005,6 +1017,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 0,
     backgroundColor: '#0165FC',
     borderRadius: RADIUS.md,
     paddingVertical: 9,
@@ -1014,6 +1027,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 2,
+  },
+  exportBtnMobile: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
   },
   exportBtnText: {
     fontSize: 12,
@@ -1033,6 +1050,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  tabsContainerMobile: {
+    borderRadius: 16,
+    padding: 3,
+  },
   tabBtn: {
     flex: 1,
     paddingVertical: 12,
@@ -1041,11 +1062,18 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     position: 'relative',
   },
+  tabBtnMobile: {
+    paddingVertical: 8,
+    borderRadius: 14,
+  },
   tabBtnActive: {},
   tabBtnText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#6B7280',
+  },
+  tabBtnTextMobile: {
+    fontSize: 11,
   },
   tabBtnTextActive: {
     color: '#0165FC',
@@ -1064,6 +1092,10 @@ const styles = StyleSheet.create({
   periodSelectorRow: {
     flexDirection: 'row',
     gap: 8,
+    flexWrap: 'wrap',
+  },
+  periodSelectorRowMobile: {
+    gap: 6,
   },
   periodBtn: {
     flexDirection: 'row',
@@ -1075,6 +1107,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: RADIUS.md,
+  },
+  periodBtnMobile: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 3,
   },
   periodBtnActive: {
     backgroundColor: '#0165FC',

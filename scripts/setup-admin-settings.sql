@@ -1,6 +1,6 @@
 -- ============================================================
 -- Admin Settings Tables
--- Run this in Supabase SQL Editor → smartbiz-tz project
+-- Run this in Supabase SQL Editor → smartenterprise-tz project
 -- ============================================================
 
 -- ─────────────────────────────────────────────────────────────
@@ -15,8 +15,8 @@ create table if not exists system_config (
 -- Seed default values (safe to re-run)
 insert into system_config (key, value)
 values
-  ('app_name',                   'SmartBiz TZ'),
-  ('support_email',              'support@smartbiz.tz'),
+  ('app_name',                   'SmartEnterprise TZ'),
+  ('support_email',              'support@smartenterprise.tz'),
   ('support_phone',              '+255 000 000 000'),
   ('default_currency',           'TZS'),
   ('allow_new_registrations',    'true'),

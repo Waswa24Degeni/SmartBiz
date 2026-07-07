@@ -1,5 +1,5 @@
 -- ============================================================
--- PAYMENT MODULE — SmartBiz TZ  (fintech-grade revision)
+-- PAYMENT MODULE — SmartEnterprise TZ  (fintech-grade revision)
 -- ============================================================
 -- SECURITY NOTES:
 --   • NO API keys or webhook secrets are stored in this schema.

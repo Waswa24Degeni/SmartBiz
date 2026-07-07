@@ -16,6 +16,7 @@ import { COLORS, FONTS, SPACING, RADIUS } from '../lib/constants';
 import { LoginScreen } from '../screens/auth/LoginScreen';
 import { RegisterScreen } from '../screens/auth/RegisterScreen';
 import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen';
+import { UpdatePasswordScreen } from '../screens/auth/UpdatePasswordScreen';
 import { OnboardingScreen } from '../screens/onboarding/OnboardingScreen';
 import { MainLayout } from '../screens/MainLayout';
 import { AdminLayout } from '../screens/admin/AdminLayout';
@@ -106,8 +107,47 @@ const pendingStyles = StyleSheet.create({
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Shown when the user's account has been banned ───────────────────────────
+function BannedScreen() {
+  const { signOut } = useAuth();
+  return (
+    <View style={bannedStyles.container}>
+      <View style={bannedStyles.iconWrap}>
+        <Ionicons name="ban-outline" size={44} color={COLORS.error} />
+      </View>
+      <Text style={bannedStyles.title}>Account Banned</Text>
+      <Text style={bannedStyles.body}>
+        Your account has been banned.{`\n\n`}
+        Please contact administrator or support for further details.
+      </Text>
+      <TouchableOpacity style={bannedStyles.btn} onPress={() => signOut()}>
+        <Text style={bannedStyles.btnText}>Sign Out</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const bannedStyles = StyleSheet.create({
+  container: {
+    flex: 1, backgroundColor: COLORS.background,
+    alignItems: 'center', justifyContent: 'center',
+    padding: SPACING['2xl'],
+  },
+  iconWrap: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: COLORS.error + '20',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: SPACING.xl,
+  },
+  title:   { fontSize: FONTS.sizes['2xl'], fontWeight: '700', color: COLORS.text, marginBottom: SPACING.sm, textAlign: 'center' },
+  body:    { fontSize: FONTS.sizes.base, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: SPACING['2xl'] },
+  btn:     { backgroundColor: COLORS.error, paddingVertical: 14, paddingHorizontal: 36, borderRadius: RADIUS.lg, minWidth: 200, alignItems: 'center' },
+  btnText: { color: COLORS.white, fontWeight: '700', fontSize: FONTS.sizes.base },
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 function RootNavigator() {
-  const { session, user, business, subscription, loading, profileLoading } = useAuth();
+  const { session, user, business, subscription, loading, profileLoading, isPasswordRecovery } = useAuth();
 
   // Show spinner while initial auth check OR profile is loading after sign-in
   if (loading || profileLoading) {
@@ -115,6 +155,15 @@ function RootNavigator() {
       <View style={styles.loading}>
         <ActivityIndicator size="large" color={COLORS.accent} />
       </View>
+    );
+  }
+
+  // Password Recovery state -> force update password screen
+  if (isPasswordRecovery) {
+    return (
+      <Stack.Navigator screenOptions={stackScreenOptions}>
+        <Stack.Screen name="UpdatePassword" component={UpdatePasswordScreen} />
+      </Stack.Navigator>
     );
   }
 
@@ -129,10 +178,15 @@ function RootNavigator() {
     );
   }
 
+  // Banned user → show banned screen immediately
+  if (user?.role === 'banned') {
+    return <BannedScreen />;
+  }
+
   // Admin user → Admin panel (no business needed)
   // Check both DB role and email — guards against the trigger creating the row
   // with role='owner' before the explicit UPDATE in fix-auth.sql can correct it.
-  const isAdmin = user?.role === 'admin' || user?.email === 'admin@smartbiz.tz';
+  const isAdmin = user?.role === 'admin' || user?.email === 'admin@smartenterprise.tz';
   if (isAdmin) {
     return (
       <Stack.Navigator screenOptions={stackScreenOptions}>
@@ -141,8 +195,8 @@ function RootNavigator() {
     );
   }
 
-  // Authenticated but no business → Onboarding
-  if (!business) {
+  // Authenticated but no business OR incomplete business → Onboarding
+  if (!business || business.category === 'SETUP_PENDING') {
     return (
       <Stack.Navigator screenOptions={stackScreenOptions}>
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />

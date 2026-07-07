@@ -37,6 +37,12 @@ export function AdminUsersScreen() {
   const [editTarget, setEditTarget] = useState<UserRow | null>(null);
   const [editRole, setEditRole] = useState<UserRole>('owner');
   const [saving, setSaving] = useState(false);
+
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [resetting, setResetting] = useState(false);
+
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
 
@@ -107,6 +113,52 @@ export function AdminUsersScreen() {
         },
       ]
     );
+  };
+
+  const handleResetPasswordSubmit = async () => {
+    if (!resetTarget) return;
+    if (newPassword.length < 6) {
+      Alert.alert('Weak password', 'Password must be at least 6 characters.');
+      return;
+    }
+
+    setResetting(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    try {
+      const res = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/admin-reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          target_user_id: resetTarget.id,
+          new_password: newPassword,
+        }),
+      });
+      
+      const data = await res.json();
+      setResetting(false);
+      
+      if (!res.ok) {
+        Alert.alert('Error', data.error || 'Failed to reset password');
+      } else {
+        Alert.alert('Success', 'Password has been updated.');
+        setResetModalVisible(false);
+        setNewPassword('');
+        setResetTarget(null);
+      }
+    } catch (err: any) {
+      setResetting(false);
+      Alert.alert('Error', err.message);
+    }
+  };
+
+  const openResetPassword = (user: UserRow) => {
+    setResetTarget(user);
+    setNewPassword('');
+    setResetModalVisible(true);
   };
 
   const roles = ['All', ...ROLES, 'banned'];
@@ -219,6 +271,10 @@ export function AdminUsersScreen() {
               )}
 
               <View style={[styles.cell, isMobile ? styles.actionsMobile : { flex: 0.7, flexDirection: 'row', gap: 5 }]}>
+                <TouchableOpacity style={[styles.actionBtn, isMobile && styles.actionBtnMobile, { backgroundColor: COLORS.warning + '20' }]} onPress={() => openResetPassword(user)}>
+                  <Ionicons name="key-outline" size={15} color={COLORS.warning} />
+                  {isMobile && <Text style={[styles.actionBtnText, { color: COLORS.warning }]}>Reset Pwd</Text>}
+                </TouchableOpacity>
                 <TouchableOpacity style={[styles.actionBtn, isMobile && styles.actionBtnMobile]} onPress={() => handleEditOpen(user)}>
                   <Ionicons name="create-outline" size={15} color={COLORS.info} />
                   {isMobile && <Text style={styles.actionBtnText}>Edit</Text>}
@@ -277,6 +333,40 @@ export function AdminUsersScreen() {
               {saving ? <ActivityIndicator color={COLORS.white} size="small" />
                 : <Text style={styles.saveBtnText}>Save Changes</Text>}
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Reset Password Modal */}
+      <Modal visible={resetModalVisible} transparent animationType="fade" onRequestClose={() => setResetModalVisible(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Reset Password</Text>
+              <TouchableOpacity onPress={() => setResetModalVisible(false)}>
+                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSub}>
+              Enter a new password for {resetTarget?.full_name ?? resetTarget?.email}.
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="New password (min 6 characters)"
+              autoCapitalize="none"
+              secureTextEntry
+              placeholderTextColor={COLORS.textMuted}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setResetModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveBtn, resetting && { opacity: 0.6 }]} onPress={handleResetPasswordSubmit} disabled={resetting}>
+                {resetting ? <ActivityIndicator size="small" color={COLORS.white} /> : <Text style={styles.saveBtnText}>Reset</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -427,4 +517,34 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
   },
   retryBtnText: { color: COLORS.white, fontWeight: '700' },
+  input: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceAlt,
+    color: COLORS.text,
+    fontSize: FONTS.sizes.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    minHeight: 44,
+    marginBottom: SPACING.md,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  cancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.sm,
+    minHeight: 44,
+  },
+  cancelBtnText: {
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
 });

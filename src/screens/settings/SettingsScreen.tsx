@@ -11,6 +11,7 @@ import { Button } from '../../components/common/Button';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { SNIPPE_BANKS, generateIdempotencyKey } from '../../lib/snippe';
+import { useSubscriptionPlans } from '../../lib/hooks';
 import { LANGUAGES, CURRENCIES, AppLanguage, AppCurrency } from '../../context/SettingsContext';
 
 const SETTINGS_MENU = [
@@ -1279,11 +1280,7 @@ function LanguageRegionSection() {
 // Subscription Section — view plan, pay to upgrade/renew
 // ============================================================
 
-const SUB_PLANS = [
-  { id: 'starter',  name: 'Starter',  price: 15000,  features: ['1 Business', '3 users', '500 products', 'Advanced reports', 'Email support'] },
-  { id: 'business', name: 'Business', price: 35000,  features: ['2 Businesses', '10 users', 'Unlimited products', 'Full analytics', 'Priority support', 'Staff management'] },
-  { id: 'premium',  name: 'Premium',  price: 80000,  features: ['2 Businesses', 'Unlimited users', 'Unlimited products', 'Custom reports', '24/7 support', 'API access'] },
-] as const;
+// Removed static SUB_PLANS array in favor of dynamic fetch
 
 const MOBILE_MONEY_MIN_AMOUNT = 500;
 
@@ -1299,13 +1296,16 @@ function isValidTzPhone(raw: string): boolean {
   return /^255\d{9}$/.test(normalizeTzPhone(raw));
 }
 
-type SubPlanId = typeof SUB_PLANS[number]['id'];
+// Removed static SubPlanId
 
 function SubscriptionSection() {
   const { user, business } = useAuth();
+  const { plans: allPlans, loading: plansLoading } = useSubscriptionPlans();
+  const SUB_PLANS = allPlans.filter(p => p.id !== 'free');
+  
   const [loading, setLoading]           = useState(true);
   const [currentSub, setCurrentSub]     = useState<{ plan: string; status: string; expires_at: string } | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<SubPlanId>('starter');
+  const [selectedPlan, setSelectedPlan] = useState<string>('starter');
   const [payerPhone, setPayerPhone]     = useState('');
   const [payerName, setPayerName]       = useState('');
   const [phoneError, setPhoneError]     = useState('');
@@ -1332,7 +1332,7 @@ function SubscriptionSection() {
     if (user?.phone)     setPayerPhone(user.phone);
   }, [loadSub, user?.full_name, user?.phone]);
 
-  const plan = SUB_PLANS.find(p => p.id === selectedPlan)!;
+  const plan = SUB_PLANS.find(p => p.id === selectedPlan) || SUB_PLANS[0];
 
   const handlePay = async () => {
     const normalized = normalizeTzPhone(payerPhone);
@@ -1432,7 +1432,7 @@ function SubscriptionSection() {
     }
   };
 
-  if (loading) return <ActivityIndicator color={COLORS.accent} style={{ marginTop: 40 }} />;
+  if (loading || plansLoading) return <ActivityIndicator color={COLORS.accent} style={{ marginTop: 40 }} />;
 
   return (
     <View style={styles.section}>

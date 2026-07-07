@@ -52,7 +52,7 @@ function AdminSidebarContent({
         </View>
         {!collapsed && (
           <View style={{ flex: 1 }}>
-            <Text style={styles.logoTitle}>SmartBiz</Text>
+            <Text style={styles.logoTitle}>SmartEnterprise</Text>
             <Text style={styles.logoSub}>Admin Panel</Text>
           </View>
         )}
@@ -123,7 +123,7 @@ export function AdminLayout() {
   const drawerWidth = Math.min(Math.max(width * 0.82, 248), 320);
 
   useEffect(() => {
-    AsyncStorage.getItem('smartbiz_admin_last_route').then((savedRoute) => {
+    AsyncStorage.getItem('smartenterprise_admin_last_route').then((savedRoute) => {
       if (savedRoute && NAV_ITEMS.some(item => item.route === savedRoute)) {
         setRoute(savedRoute as AdminRoute);
       }
@@ -133,7 +133,7 @@ export function AdminLayout() {
 
   const handleSetRoute = (newRoute: AdminRoute) => {
     setRoute(newRoute);
-    AsyncStorage.setItem('smartbiz_admin_last_route', newRoute);
+    AsyncStorage.setItem('smartenterprise_admin_last_route', newRoute);
   };
 
   const renderContent = () => {
@@ -207,7 +207,7 @@ export function AdminLayout() {
             )}
             <View>
               <Text style={styles.pageTitle}>{route}</Text>
-              {!isMobile && <Text style={styles.pageSub}>SmartBiz Admin Panel</Text>}
+              {!isMobile && <Text style={styles.pageSub}>SmartEnterprise Admin Panel</Text>}
             </View>
           </View>
           <View style={styles.topRight}>

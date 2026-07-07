@@ -92,9 +92,9 @@ export function LoginScreen({ navigation }: Props) {
         {/* Logo */}
         <View style={styles.logoWrap}>
           <View style={styles.logoIcon}>
-            <Text style={styles.logoText}>SB</Text>
+            <Text style={styles.logoText}>SE</Text>
           </View>
-          <Text style={styles.appName}>SmartBiz</Text>
+          <Text style={styles.appName}>SmartEnterprise</Text>
           <Text style={styles.tagline}>Business management simplified</Text>
         </View>
 

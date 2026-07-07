@@ -283,7 +283,7 @@ serve(async (req: Request) => {
                 recipient_bank:    body.recipient_bank!,
                 recipient_account: body.recipient_account!,
                 recipient_name:    body.recipient_name!,
-                narration:         'Business payout via SmartBiz',
+                narration:         'Business payout via SmartEnterprise',
                 webhook_url:       webhookUrl,
                 metadata: { payment_id: paymentId, ...body.metadata },
               }
@@ -292,7 +292,7 @@ serve(async (req: Request) => {
                 channel:         'mobile' as const,
                 recipient_phone: normalisePhone(body.recipient_phone!),
                 recipient_name:  body.recipient_name!,
-                narration:       'Business payout via SmartBiz',
+                narration:       'Business payout via SmartEnterprise',
                 webhook_url:     webhookUrl,
                 metadata: { payment_id: paymentId, ...body.metadata },
               };

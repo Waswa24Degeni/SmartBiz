@@ -2,7 +2,7 @@
 // Core Database Types
 // =====================================
 
-export type UserRole = 'owner' | 'staff' | 'admin';
+export type UserRole = 'owner' | 'staff' | 'admin' | 'banned';
 export type SubscriptionPlan = 'free' | 'starter' | 'business' | 'premium';
 export type OrderStatus = 'active' | 'completed' | 'cancelled' | 'refunded';
 export type PaymentMethod = 'cash' | 'mobile_money';
@@ -70,6 +70,7 @@ export interface Product {
   unit: string;
   barcode?: string;
   is_active: boolean;
+  has_tax?: boolean;
   created_at: string;
   updated_at: string;
   category?: Category;

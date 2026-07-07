@@ -33,7 +33,7 @@ export function Sidebar({ activeRoute, onNavigate, collapsed = false, onToggleCo
   const [newShopName, setNewShopName] = React.useState('');
   const [isAddingShop, setIsAddingShop] = React.useState(false);
 
-  const bName     = business?.name ?? 'SmartBiz';
+  const bName     = business?.name ?? 'SmartEnterprise';
   const bInitials = getInitials(bName);
   const logoUrl = business?.logo_url?.trim() ?? '';
   const showLogo = !!logoUrl && !logoFailed;

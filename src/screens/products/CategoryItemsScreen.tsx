@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, Alert,
-  Modal, TextInput, ActivityIndicator, useWindowDimensions, KeyboardAvoidingView, Platform,
+  Modal, TextInput, ActivityIndicator, useWindowDimensions, KeyboardAvoidingView, Platform, Dimensions,
+  Switch
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -13,7 +14,7 @@ import { supabase } from '../../lib/supabase';
 import { Product, Category } from '../../types';
 import { useCart } from '../../context/CartContext';
 import { COLORS, SPACING, FONTS, RADIUS, SHADOWS, BREAKPOINTS } from '../../lib/constants';
-import { useRealtimeSubscription } from '../../lib/hooks';
+import { useRealtimeSubscription, useSubscriptionPlans } from '../../lib/hooks';
 import { getPosLabel, getPosType, parseSpreadsheet } from '../../lib/inventory';
 
 interface ProductForm {
@@ -23,10 +24,11 @@ interface ProductForm {
   purchase_price: string;
   stock_quantity: string;
   unit: string;
+  has_tax: boolean;
 }
 
 const EMPTY_FORM: ProductForm = {
-  name: '', description: '', selling_price: '', purchase_price: '', stock_quantity: '', unit: 'piece',
+  name: '', description: '', selling_price: '', purchase_price: '', stock_quantity: '', unit: 'piece', has_tax: false,
 };
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -38,7 +40,8 @@ interface Props {
 }
 
 export function CategoryItemsScreen({ category = null, onBack, onAddToOrder }: Props) {
-  const { business } = useAuth();
+  const { business, subscription } = useAuth();
+  const { plans } = useSubscriptionPlans();
   const { addItem, items } = useCart();
   const { width } = useWindowDimensions();
   const isMobile = width < BREAKPOINTS.tablet;
@@ -215,6 +218,7 @@ export function CategoryItemsScreen({ category = null, onBack, onAddToOrder }: P
           unit: row.unit,
           barcode: row.barcode ?? null,
           is_active: row.isActive,
+          has_tax: false, // Default to false for imported items unless we add it to the template
         };
 
         if (existing) {
@@ -374,6 +378,7 @@ export function CategoryItemsScreen({ category = null, onBack, onAddToOrder }: P
       purchase_price: String(p.purchase_price),
       stock_quantity: String(p.stock_quantity),
       unit: p.unit,
+      has_tax: !!p.has_tax,
     });
     setCrudVisible(true);
   };
@@ -421,6 +426,7 @@ export function CategoryItemsScreen({ category = null, onBack, onAddToOrder }: P
       purchase_price: parseFloat(form.purchase_price) || 0,
       stock_quantity: parseInt(form.stock_quantity) || 0,
       unit: form.unit.trim() || 'piece',
+      has_tax: form.has_tax,
     };
 
     if (editingProduct) {
@@ -436,6 +442,27 @@ export function CategoryItemsScreen({ category = null, onBack, onAddToOrder }: P
         return;
       }
     } else {
+      const currentPlanId = subscription?.plan ?? 'free';
+      const currentPlanDef = plans.find(p => p.id === currentPlanId);
+      const maxProducts = currentPlanDef?.max_products ?? 100;
+
+      if (maxProducts !== -1) {
+        const { count } = await supabase
+          .from('products')
+          .select('*', { count: 'exact', head: true })
+          .eq('business_id', business.id)
+          .eq('is_active', true);
+
+        if (count !== null && count >= maxProducts) {
+          setSaving(false);
+          Alert.alert(
+            'Upgrade required',
+            `Your current plan allows a maximum of ${maxProducts} products. Please upgrade to add more.`
+          );
+          return;
+        }
+      }
+
       const { error } = await supabase.from('products').insert({
         ...payload,
         business_id: business.id,
@@ -769,10 +796,37 @@ export function CategoryItemsScreen({ category = null, onBack, onAddToOrder }: P
       {/* Add / Edit product modal */}
       <Modal visible={crudVisible} transparent animationType="fade" onRequestClose={() => setCrudVisible(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-          <View style={styles.modalOverlay}>
+          <View style={[styles.modalOverlay, isCompact && styles.modalOverlayCompact]}>
             <View style={[styles.modalBox, isCompact && styles.modalBoxCompact]}>
-              <Text style={styles.modalTitle}>{editingProduct ? 'Edit Product' : 'New Product'}</Text>
-              <ScrollView keyboardShouldPersistTaps="handled">
+              <View style={styles.modalHeader}>
+                <View style={styles.modalHeaderTextWrap}>
+                  <Text style={styles.modalTitle}>{editingProduct ? 'Edit Product' : 'New Product'}</Text>
+                  <Text style={styles.modalSubtitle}>
+                    {editingProduct ? 'Update product details and stock information.' : 'Add a product to your catalog.'}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.modalCloseBtn}
+                  onPress={() => setCrudVisible(false)}
+                  disabled={saving}
+                >
+                  <Ionicons name="close" size={20} color={COLORS.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={styles.modalScrollView}
+                contentContainerStyle={styles.modalScrollContent}
+              >
+                <View style={styles.modalInfoCard}>
+                  <Ionicons name="layers-outline" size={18} color={COLORS.primary} />
+                  <Text style={styles.modalInfoText}>
+                    Fields marked with * are required. You can save now and adjust the rest later.
+                  </Text>
+                </View>
+
                 {[
                   { label: 'Name *',        key: 'name',           keyboard: 'default' },
                   { label: 'Description',   key: 'description',    keyboard: 'default' },
@@ -785,7 +839,7 @@ export function CategoryItemsScreen({ category = null, onBack, onAddToOrder }: P
                     <Text style={styles.fieldLabel}>{f.label}</Text>
                     <TextInput
                       style={styles.fieldInput}
-                      value={form[f.key as keyof ProductForm]}
+                      value={form[f.key as keyof ProductForm] as string}
                       onChangeText={v => setForm(prev => ({ ...prev, [f.key]: v }))}
                       keyboardType={f.keyboard as any}
                       placeholderTextColor={COLORS.textMuted}
@@ -793,19 +847,42 @@ export function CategoryItemsScreen({ category = null, onBack, onAddToOrder }: P
                     />
                   </View>
                 ))}
+
+                <View style={[styles.fieldWrap, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 }]}>
+                  <Text style={styles.fieldLabel}>Taxable (18% VAT)</Text>
+                  <Switch
+                    value={form.has_tax}
+                    onValueChange={(val) => setForm({ ...form, has_tax: val })}
+                    trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                    thumbColor={COLORS.white}
+                  />
+                </View>
+
               </ScrollView>
-              <View style={[styles.modalBtns, isCompact && styles.modalBtnsMobile]}>
-                <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setCrudVisible(false)}>
-                  <Text style={styles.modalCancelText}>Cancel</Text>
+
+              <View style={[styles.modalActionStrip, isCompact && styles.modalActionStripMobile]}>
+                <TouchableOpacity
+                  style={[styles.modalSecondaryBtn, isCompact && styles.modalSecondaryBtnMobile]}
+                  onPress={() => setForm(EMPTY_FORM)}
+                  disabled={saving}
+                >
+                  <Text style={styles.modalSecondaryText}>{editingProduct ? 'Reset' : 'Clear'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.modalSaveBtn, saving && { opacity: 0.7 }]}
+                  style={[styles.modalSecondaryBtn, isCompact && styles.modalSecondaryBtnMobile]}
+                  onPress={() => setCrudVisible(false)}
+                  disabled={saving}
+                >
+                  <Text style={styles.modalSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalSaveBtn, isCompact && styles.modalSaveBtnMobile, saving && { opacity: 0.7 }]}
                   onPress={handleSave}
                   disabled={saving}
                 >
                   {saving
                     ? <ActivityIndicator color={COLORS.white} size="small" />
-                    : <Text style={styles.modalSaveText}>{editingProduct ? 'Save' : 'Create'}</Text>
+                    : <Text style={styles.modalSaveText}>{editingProduct ? 'Save Product' : 'Create Product'}</Text>
                   }
                 </TouchableOpacity>
               </View>
@@ -1074,33 +1151,131 @@ const styles = StyleSheet.create({
   },
   addToOrderText: { color: COLORS.white, fontSize: FONTS.sizes.base, fontWeight: '700' },
   // CRUD modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.md,
+  },
+  modalOverlayCompact: {
+    justifyContent: 'flex-end',
+    padding: 0,
+  },
   modalBox: {
-    backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, padding: SPACING.xl,
-    width: '90%', maxWidth: 480, maxHeight: '85%',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    width: '100%',
+    maxWidth: 560,
+    height: Dimensions.get('window').height * 0.9,
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  modalScrollView: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
   },
   modalBoxCompact: {
-    width: '94%',
-    padding: SPACING.base,
-    maxHeight: '90%',
+    width: '100%',
+    maxWidth: '100%',
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    height: Dimensions.get('window').height * 0.85,
   },
-  modalTitle: { fontSize: FONTS.sizes.lg, fontWeight: '700', color: COLORS.text, marginBottom: SPACING.md },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+    flexShrink: 0,
+  },
+  modalHeaderTextWrap: { flex: 1, minWidth: 0 },
+  modalTitle: { fontSize: FONTS.sizes.lg, fontWeight: '800', color: COLORS.text },
+  modalSubtitle: { marginTop: 4, fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, lineHeight: 16 },
+  modalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surfaceAlt,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modalScrollContent: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.lg,
+  },
+  modalInfoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  modalInfoText: { flex: 1, fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, lineHeight: 16 },
   fieldWrap: { marginBottom: SPACING.md },
   fieldLabel: { fontSize: FONTS.sizes.xs, color: COLORS.textSecondary, marginBottom: SPACING.xs },
   fieldInput: {
     borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
     fontSize: FONTS.sizes.base, color: COLORS.text,
+    backgroundColor: COLORS.background,
   },
-  modalBtns: { flexDirection: 'row', gap: SPACING.md, marginTop: SPACING.md },
-  modalBtnsMobile: { flexDirection: 'column' },
-  modalCancelBtn: {
-    flex: 1, padding: SPACING.md, borderRadius: RADIUS.md,
-    borderWidth: 1, borderColor: COLORS.border, alignItems: 'center',
-    minHeight: 44,
+  modalActionStrip: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    padding: SPACING.lg,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+    backgroundColor: COLORS.surface,
+    flexShrink: 0,
   },
-  modalCancelText: { color: COLORS.textSecondary, fontWeight: '600' },
-  modalSaveBtn: { flex: 1, padding: SPACING.md, borderRadius: RADIUS.md, backgroundColor: COLORS.accent, alignItems: 'center', minHeight: 44 },
-  modalSaveText: { color: COLORS.white, fontWeight: '600' },
+  modalActionStripMobile: {
+    flexDirection: 'column',
+  },
+  modalSecondaryBtn: {
+    minHeight: 46,
+    flex: 1,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: SPACING.md,
+  },
+  modalSecondaryBtnMobile: {
+    flex: 0,
+    width: '100%',
+  },
+  modalSecondaryText: { color: COLORS.textSecondary, fontWeight: '700' },
+  modalSaveBtn: {
+    flex: 1.2,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 46,
+  },
+  modalSaveBtnMobile: {
+    flex: 0,
+    width: '100%',
+  },
+  modalSaveText: { color: COLORS.white, fontWeight: '700' },
 });
 

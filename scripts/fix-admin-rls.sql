@@ -1,5 +1,5 @@
 -- =============================================
--- SmartBiz: Admin RLS Fix
+-- SmartEnterprise: Admin RLS Fix
 -- Run this in: Supabase Dashboard → SQL Editor
 -- =============================================
 -- This script adds policies so that users with
@@ -117,7 +117,7 @@ CREATE POLICY "admin_insert_all_tickets" ON support_tickets
 -- Case (a): update existing row
 UPDATE public.users
 SET role = 'admin', updated_at = now()
-WHERE email = 'admin@smartbiz.tz';
+WHERE email = 'admin@smartenterprise.tz';
 
 -- Case (b): insert if the auth user exists but public.users row is missing
 INSERT INTO public.users (id, email, full_name, role, created_at, updated_at)
@@ -129,7 +129,7 @@ SELECT
   a.created_at,
   now()
 FROM auth.users a
-WHERE a.email = 'admin@smartbiz.tz'
+WHERE a.email = 'admin@smartenterprise.tz'
   AND NOT EXISTS (SELECT 1 FROM public.users u WHERE u.id = a.id);
 
 

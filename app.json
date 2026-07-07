@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "SmartBiz",
-    "slug": "smartbiz-tz",
+    "name": "SmartEnterprise",
+    "slug": "smartenterprise-tz",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.smartbiz.tz"
+      "bundleIdentifier": "com.smartenterprise.tz"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +23,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.smartbiz.tz"
+      "package": "com.smartenterprise.tz"
     },
     "web": {
       "favicon": "./assets/favicon.png",

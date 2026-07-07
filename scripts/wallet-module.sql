@@ -1,5 +1,5 @@
 -- ============================================================
--- SmartBiz Wallet Module
+-- SmartEnterprise Wallet Module
 -- Run this in your Supabase SQL editor to set up the wallet system.
 -- ============================================================
 

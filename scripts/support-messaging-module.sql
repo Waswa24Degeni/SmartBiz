@@ -1,5 +1,5 @@
 -- =============================================
--- SmartBiz: Support Messaging Module
+-- SmartEnterprise: Support Messaging Module
 -- Purpose:
 -- 1) Enable threaded conversation between owners and admin on support tickets
 -- 2) Allow admin to send notifications to owners

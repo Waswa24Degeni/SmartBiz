@@ -1,10 +1,10 @@
 -- =============================================
--- SmartBiz Complete Auth Fix
+-- SmartEnterprise Complete Auth Fix
 -- Run this in: Supabase Dashboard → SQL Editor
 -- =============================================
 -- Sample credentials:
---   ADMIN :  admin@smartbiz.tz   / Admin@1234
---   OWNER :  owner@smartbiz.tz   / Owner@1234
+--   ADMIN :  admin@smartenterprise.tz   / Admin@1234
+--   OWNER :  owner@smartenterprise.tz   / Owner@1234
 -- =============================================
 
 -- ─────────────────────────────────────────────
@@ -24,20 +24,20 @@
 DELETE FROM public.businesses
 WHERE owner_id IN (
   SELECT id FROM public.users
-  WHERE email IN ('admin@smartbiz.tz', 'owner@smartbiz.tz')
+  WHERE email IN ('admin@smartenterprise.tz', 'owner@smartenterprise.tz')
 );
 
 DELETE FROM auth.identities
 WHERE user_id IN (
   SELECT id FROM auth.users
-  WHERE email IN ('admin@smartbiz.tz', 'owner@smartbiz.tz')
+  WHERE email IN ('admin@smartenterprise.tz', 'owner@smartenterprise.tz')
 );
 
 DELETE FROM public.users
-WHERE email IN ('admin@smartbiz.tz', 'owner@smartbiz.tz');
+WHERE email IN ('admin@smartenterprise.tz', 'owner@smartenterprise.tz');
 
 DELETE FROM auth.users
-WHERE email IN ('admin@smartbiz.tz', 'owner@smartbiz.tz');
+WHERE email IN ('admin@smartenterprise.tz', 'owner@smartenterprise.tz');
 
 
 -- ─────────────────────────────────────────────
@@ -73,7 +73,7 @@ BEGIN
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
     -- Preserve admin role for the known admin account; everyone else defaults to 'owner'
-    CASE WHEN NEW.email = 'admin@smartbiz.tz' THEN 'admin' ELSE 'owner' END,
+    CASE WHEN NEW.email = 'admin@smartenterprise.tz' THEN 'admin' ELSE 'owner' END,
     now(),
     now()
   )
@@ -112,7 +112,7 @@ BEGIN
     admin_uid,
     '00000000-0000-0000-0000-000000000000',
     'authenticated', 'authenticated',
-    'admin@smartbiz.tz',
+    'admin@smartenterprise.tz',
     crypt('Admin@1234', gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}',
@@ -130,18 +130,18 @@ BEGIN
   ) VALUES (
     admin_uid,
     admin_uid,
-    'admin@smartbiz.tz',
-    jsonb_build_object('sub', admin_uid::text, 'email', 'admin@smartbiz.tz', 'email_verified', true),
+    'admin@smartenterprise.tz',
+    jsonb_build_object('sub', admin_uid::text, 'email', 'admin@smartenterprise.tz', 'email_verified', true),
     'email',
     now(), now(), now()
   );
 
   -- Insert admin profile with role = 'admin'
   INSERT INTO public.users (id, email, full_name, role, created_at, updated_at)
-  VALUES (admin_uid, 'admin@smartbiz.tz', 'Super Admin', 'admin', now(), now())
+  VALUES (admin_uid, 'admin@smartenterprise.tz', 'Super Admin', 'admin', now(), now())
   ON CONFLICT (id) DO UPDATE SET role = 'admin', updated_at = now();
 
-  RAISE NOTICE 'Admin created: % / Admin@1234', 'admin@smartbiz.tz';
+  RAISE NOTICE 'Admin created: % / Admin@1234', 'admin@smartenterprise.tz';
 
 
   -- ── INSERT OWNER into auth.users ─────────
@@ -158,7 +158,7 @@ BEGIN
     owner_uid,
     '00000000-0000-0000-0000-000000000000',
     'authenticated', 'authenticated',
-    'owner@smartbiz.tz',
+    'owner@smartenterprise.tz',
     crypt('Owner@1234', gen_salt('bf')),
     now(),
     '{"provider":"email","providers":["email"]}',
@@ -176,8 +176,8 @@ BEGIN
   ) VALUES (
     owner_uid,
     owner_uid,
-    'owner@smartbiz.tz',
-    jsonb_build_object('sub', owner_uid::text, 'email', 'owner@smartbiz.tz', 'email_verified', true),
+    'owner@smartenterprise.tz',
+    jsonb_build_object('sub', owner_uid::text, 'email', 'owner@smartenterprise.tz', 'email_verified', true),
     'email',
     now(), now(), now()
   );
@@ -185,10 +185,10 @@ BEGIN
   -- Owner profile is created by the trigger automatically,
   -- but upsert here as fallback
   INSERT INTO public.users (id, email, full_name, role, created_at, updated_at)
-  VALUES (owner_uid, 'owner@smartbiz.tz', 'Demo Owner', 'owner', now(), now())
+  VALUES (owner_uid, 'owner@smartenterprise.tz', 'Demo Owner', 'owner', now(), now())
   ON CONFLICT (id) DO NOTHING;
 
-  RAISE NOTICE 'Owner created: % / Owner@1234', 'owner@smartbiz.tz';
+  RAISE NOTICE 'Owner created: % / Owner@1234', 'owner@smartenterprise.tz';
 
 END $$;
 
@@ -203,7 +203,7 @@ SELECT
   (SELECT COUNT(*) FROM auth.identities i WHERE i.user_id = u.id) AS identity_count
 FROM auth.users u
 LEFT JOIN public.users pu ON pu.id = u.id
-WHERE u.email IN ('admin@smartbiz.tz', 'owner@smartbiz.tz')
+WHERE u.email IN ('admin@smartenterprise.tz', 'owner@smartenterprise.tz')
 ORDER BY pu.role;
 
 
@@ -243,7 +243,7 @@ BEGIN
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
     -- Preserve admin role for the known admin account; everyone else defaults to 'owner'
-    CASE WHEN NEW.email = 'admin@smartbiz.tz' THEN 'admin' ELSE 'owner' END,
+    CASE WHEN NEW.email = 'admin@smartenterprise.tz' THEN 'admin' ELSE 'owner' END,
     now(),
     now()
   )
@@ -268,7 +268,7 @@ DECLARE
 BEGIN
 
   -- ── ADMIN USER ───────────────────────────
-  SELECT id INTO admin_id FROM auth.users WHERE email = 'admin@smartbiz.tz';
+  SELECT id INTO admin_id FROM auth.users WHERE email = 'admin@smartenterprise.tz';
   IF admin_id IS NULL THEN
     INSERT INTO auth.users (
       id, instance_id, email, encrypted_password,
@@ -277,7 +277,7 @@ BEGIN
     ) VALUES (
       gen_random_uuid(),
       '00000000-0000-0000-0000-000000000000',
-      'admin@smartbiz.tz',
+      'admin@smartenterprise.tz',
       crypt('Admin@1234', gen_salt('bf')),
       now(),
       '{"provider":"email","providers":["email"]}',
@@ -297,18 +297,18 @@ BEGIN
 
   -- Upsert admin profile
   INSERT INTO public.users (id, email, full_name, role, created_at, updated_at)
-  VALUES (admin_id, 'admin@smartbiz.tz', 'Super Admin', 'admin', now(), now())
+  VALUES (admin_id, 'admin@smartenterprise.tz', 'Super Admin', 'admin', now(), now())
   ON CONFLICT (id) DO UPDATE
     SET role = 'admin', email = EXCLUDED.email,
         full_name = EXCLUDED.full_name, updated_at = now();
 
   -- Also sync by email in case id drifted
   UPDATE public.users SET id = admin_id, role = 'admin', updated_at = now()
-  WHERE email = 'admin@smartbiz.tz' AND id <> admin_id;
+  WHERE email = 'admin@smartenterprise.tz' AND id <> admin_id;
 
 
   -- ── OWNER USER ───────────────────────────
-  SELECT id INTO owner_id FROM auth.users WHERE email = 'owner@smartbiz.tz';
+  SELECT id INTO owner_id FROM auth.users WHERE email = 'owner@smartenterprise.tz';
   IF owner_id IS NULL THEN
     INSERT INTO auth.users (
       id, instance_id, email, encrypted_password,
@@ -317,7 +317,7 @@ BEGIN
     ) VALUES (
       gen_random_uuid(),
       '00000000-0000-0000-0000-000000000000',
-      'owner@smartbiz.tz',
+      'owner@smartenterprise.tz',
       crypt('Owner@1234', gen_salt('bf')),
       now(),
       '{"provider":"email","providers":["email"]}',
@@ -337,7 +337,7 @@ BEGIN
 
   -- Upsert owner profile
   INSERT INTO public.users (id, email, full_name, role, created_at, updated_at)
-  VALUES (owner_id, 'owner@smartbiz.tz', 'Demo Owner', 'owner', now(), now())
+  VALUES (owner_id, 'owner@smartenterprise.tz', 'Demo Owner', 'owner', now(), now())
   ON CONFLICT (id) DO UPDATE
     SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, updated_at = now();
 
@@ -397,7 +397,7 @@ DECLARE
   v_owner_id  uuid;
   v_biz_id    uuid;
 BEGIN
-  SELECT id INTO v_owner_id FROM public.users WHERE email = 'owner@smartbiz.tz';
+  SELECT id INTO v_owner_id FROM public.users WHERE email = 'owner@smartenterprise.tz';
 
   IF v_owner_id IS NULL THEN
     RAISE NOTICE 'Owner user not found — skipping demo business creation';
@@ -447,5 +447,5 @@ SELECT
   au.email_confirmed_at IS NOT NULL AS email_confirmed
 FROM auth.users au
 JOIN public.users pu ON au.id = pu.id
-WHERE au.email IN ('admin@smartbiz.tz', 'owner@smartbiz.tz')
+WHERE au.email IN ('admin@smartenterprise.tz', 'owner@smartenterprise.tz')
 ORDER BY pu.role;

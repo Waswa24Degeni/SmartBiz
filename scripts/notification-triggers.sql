@@ -1,5 +1,5 @@
 -- ============================================================
--- SmartBiz TZ — Notification Auto-Generation Triggers
+-- SmartEnterprise TZ — Notification Auto-Generation Triggers
 -- Run in Supabase SQL Editor
 -- ============================================================
 
